@@ -311,17 +311,139 @@ export function extractOfficeImages(bytes: Uint8Array): ExtractedImage[] {
 	return out;
 }
 
+export interface Rgb {
+	r: number;
+	g: number;
+	b: number;
+}
+
+/** Max possible RGB Euclidean distance (black↔white), for normalizing tolerance. */
+const MAX_RGB_DIST = Math.sqrt(3) * 255;
+
 /**
- * Finalize an acquired canvas into a saveable signature: optionally knock out
- * the light background, then crop to the ink. Returns `null` if nothing is left.
+ * Knock out a chosen background COLOR (not just "light"): every pixel within
+ * `tolerance` (0..1 of the full color range) of `color` becomes transparent,
+ * with a feathered edge. This is the reliable path for photos / scans whose
+ * background is off-white, cream, or tinted — pick the color with the eyedropper
+ * (or seed it from the border via {@link sampleBorderColor}) and raise tolerance
+ * until the background clears while the ink stays.
+ */
+export function removeBackgroundByColor(
+	canvas: HTMLCanvasElement,
+	color: Rgb,
+	tolerance = 0.18
+): void {
+	const ctx = canvas.getContext('2d');
+	const w = canvas.width;
+	const h = canvas.height;
+	if (!ctx || w === 0 || h === 0) return;
+	const img = ctx.getImageData(0, 0, w, h);
+	const d = img.data;
+	const hi = Math.max(0, Math.min(1, tolerance)) * MAX_RGB_DIST; // <= hi → clear
+	const lo = hi * 0.6; // feather band between lo..hi
+	for (let i = 0; i < d.length; i += 4) {
+		const dr = d[i] - color.r;
+		const dg = d[i + 1] - color.g;
+		const db = d[i + 2] - color.b;
+		const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+		if (dist <= lo) {
+			d[i + 3] = 0;
+		} else if (dist < hi) {
+			const t = (hi - dist) / (hi - lo); // 1 near bg → 0 at edge
+			d[i + 3] = Math.round(d[i + 3] * (1 - t));
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+}
+
+/**
+ * Average color of the canvas border pixels — a good automatic guess for the
+ * background color to knock out, so color removal works before any eyedropper.
+ */
+export function sampleBorderColor(canvas: HTMLCanvasElement): Rgb {
+	const ctx = canvas.getContext('2d');
+	const w = canvas.width;
+	const h = canvas.height;
+	if (!ctx || w === 0 || h === 0) return { r: 255, g: 255, b: 255 };
+	const d = ctx.getImageData(0, 0, w, h).data;
+	let r = 0;
+	let g = 0;
+	let b = 0;
+	let n = 0;
+	const add = (x: number, y: number) => {
+		const i = (y * w + x) * 4;
+		if (d[i + 3] > 0) {
+			r += d[i];
+			g += d[i + 1];
+			b += d[i + 2];
+			n += 1;
+		}
+	};
+	for (let x = 0; x < w; x++) {
+		add(x, 0);
+		add(x, h - 1);
+	}
+	for (let y = 0; y < h; y++) {
+		add(0, y);
+		add(w - 1, y);
+	}
+	if (n === 0) return { r: 255, g: 255, b: 255 };
+	return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
+}
+
+/**
+ * Revive faint ink: `amount` (0..1) raises partially-transparent stroke pixels
+ * toward full opacity (alpha gamma) and darkens their color toward black, so a
+ * washed-out signature (common after scan + background/line removal) reads
+ * strong. `amount` 0 is a no-op.
+ */
+export function strengthenStrokes(canvas: HTMLCanvasElement, amount: number): void {
+	const a = Math.max(0, Math.min(1, amount));
+	if (a <= 0) return;
+	const ctx = canvas.getContext('2d');
+	const w = canvas.width;
+	const h = canvas.height;
+	if (!ctx || w === 0 || h === 0) return;
+	const img = ctx.getImageData(0, 0, w, h);
+	const d = img.data;
+	const alphaGamma = 1 / (1 + a * 2); // <1 → pushes mid alphas up
+	const darken = 1 - a * 0.6;
+	for (let i = 0; i < d.length; i += 4) {
+		if (d[i + 3] === 0) continue;
+		d[i + 3] = Math.round(255 * Math.pow(d[i + 3] / 255, alphaGamma));
+		d[i] = Math.round(d[i] * darken);
+		d[i + 1] = Math.round(d[i + 1] * darken);
+		d[i + 2] = Math.round(d[i + 2] * darken);
+	}
+	ctx.putImageData(img, 0, 0);
+}
+
+/** How the background should be removed from an acquired image. */
+export interface BackgroundOptions {
+	method: 'none' | 'color' | 'luminance';
+	/** For `color`: the background color to knock out. */
+	color?: Rgb;
+	/** For `color`: 0..1 color distance tolerance. */
+	tolerance?: number;
+	/** For `luminance`: 0..1 brightness above which pixels clear. */
+	threshold?: number;
+}
+
+/**
+ * Finalize an acquired canvas into a saveable signature, in the natural order:
+ * background knockout → form-line removal → stroke strengthening → tight crop.
+ * Returns `null` if nothing is left.
  */
 export function finalizeAcquired(
 	source: HTMLCanvasElement,
-	opts: { removeBackground: boolean; threshold?: number; removeLines?: boolean }
+	opts: { background?: BackgroundOptions; removeLines?: boolean; strengthen?: number } = {}
 ): RasterizedSignature | null {
 	// Work on a copy so the on-screen preview source isn't mutated.
 	const work = cropCanvas(source, 0, 0, source.width, source.height);
-	if (opts.removeBackground) removeLightBackground(work, opts.threshold);
+	const bg = opts.background;
+	if (bg?.method === 'color' && bg.color) removeBackgroundByColor(work, bg.color, bg.tolerance);
+	else if (bg?.method === 'luminance') removeLightBackground(work, bg.threshold);
 	if (opts.removeLines) removeHorizontalLines(work);
+	if (opts.strengthen) strengthenStrokes(work, opts.strengthen);
 	return trimToPng(work);
 }
