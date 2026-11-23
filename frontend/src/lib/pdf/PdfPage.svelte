@@ -63,6 +63,11 @@
 	// row; it's cleared only by the toolbar button / Escape (see +page.svelte).
 	function onOverlayPointerDown(e: PointerEvent) {
 		if (!placing || !viewport) return;
+		// Only drop a NEW annotation when the click lands on the empty overlay
+		// itself — never when it originates inside an existing box (textarea,
+		// SVG, drag/resize handle). Those select/edit the box instead, so you
+		// don't get a cascade of empty rectangles clicking into one to type.
+		if (e.target !== overlayEl) return;
 		const rect = overlayEl.getBoundingClientRect();
 		const { xPt, yPt } = pxToPt(viewport, e.clientX - rect.left, e.clientY - rect.top);
 
