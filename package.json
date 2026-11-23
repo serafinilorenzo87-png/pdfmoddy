@@ -1,0 +1,14 @@
+{
+  "name": "pdfmoddy",
+  "version": "0.1.0",
+  "description": "PdfModdy — local PDF signing & form-filling desktop app (project root)",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
