@@ -6,11 +6,22 @@
 //! when a .pdf is opened with PdfModdy (file association). No network, no
 //! sidecar.
 
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 #[cfg(desktop)]
 use tauri::{Emitter, Manager};
+
+/// Distinct error code the frontend keys on to show the "install LibreOffice /
+/// locate soffice.exe" flow instead of a generic failure.
+const LIBREOFFICE_NOT_FOUND: &str = "LIBREOFFICE_NOT_FOUND";
+
+/// Max time to wait for a single headless conversion before giving up.
+const CONVERT_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// The PDF path PdfModdy was launched with (file association / "Open with"),
 /// consumed once by the frontend on startup via `get_launch_file`.
@@ -51,6 +62,190 @@ fn get_launch_file(state: tauri::State<'_, LaunchFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut guard| guard.take())
 }
 
+// ── PDF → Word (.docx) via a locally installed LibreOffice ──────────────────
+//
+// LibreOffice is NOT bundled (it would add ~300–400 MB to a ~2 MB installer):
+// we locate an existing install and drive `soffice` headless. The user can
+// configure the path if it lives somewhere unusual.
+
+/// Prefer `soffice.com` over `soffice.exe` in the same folder: on Windows the
+/// `.com` console wrapper BLOCKS until the conversion finishes, while the `.exe`
+/// can detach and return immediately (so `wait()` would see success too early).
+fn prefer_com(path: &Path) -> PathBuf {
+    if path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.eq_ignore_ascii_case("soffice.exe"))
+        .unwrap_or(false)
+    {
+        let com = path.with_file_name("soffice.com");
+        if com.is_file() {
+            return com;
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Resolve a usable `soffice` executable: 1) the user-configured path, 2) the
+/// standard Windows install locations, 3) the `PATH`. Returns `None` when
+/// LibreOffice cannot be found anywhere.
+fn locate_soffice(configured: Option<&str>) -> Option<PathBuf> {
+    if let Some(p) = configured {
+        let path = Path::new(p);
+        if path.is_file() {
+            return Some(prefer_com(path));
+        }
+    }
+
+    const COMMON: &[&str] = &[
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ];
+    for c in COMMON {
+        let path = Path::new(c);
+        if path.is_file() {
+            return Some(prefer_com(path));
+        }
+    }
+
+    // PATH scan (soffice.com first, so we get the blocking wrapper).
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            for name in ["soffice.com", "soffice.exe"] {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Turn an absolute Windows path into a `file:///C:/...` URL, which is what
+/// LibreOffice's `-env:UserInstallation` expects.
+fn to_file_url(path: &Path) -> String {
+    let s = path.to_string_lossy().replace('\\', "/");
+    format!("file:///{}", s.trim_start_matches('/'))
+}
+
+/// Create a unique temporary directory under the system temp folder.
+fn unique_temp_dir(tag: &str) -> std::io::Result<PathBuf> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("pdfmoddy_{tag}_{nanos}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Wait for a child process with a timeout, killing it if it overruns.
+fn wait_with_timeout(child: &mut std::process::Child, timeout: Duration) -> Result<i32, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status.code().unwrap_or(-1)),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("conversion timed out".into());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("wait failed: {e}")),
+        }
+    }
+}
+
+/// Convert a PDF (given as base64 bytes) to a .docx at `output_docx_path`, using
+/// a locally installed LibreOffice. `soffice_path` is the user-configured
+/// executable, if any. Returns `LIBREOFFICE_NOT_FOUND` when no install is found.
+///
+/// A dedicated temporary `UserInstallation` profile is used so the conversion
+/// works even while the user already has LibreOffice open (otherwise the shared
+/// profile is locked and headless mode fails). `writer_pdf_import` forces the
+/// PDF to import into Writer — without it a generic PDF imports as a Draw
+/// document, which the .docx (Writer) filter cannot export.
+#[tauri::command]
+fn convert_pdf_to_docx(
+    pdf_base64: String,
+    output_docx_path: String,
+    soffice_path: Option<String>,
+) -> Result<(), String> {
+    let bytes = STANDARD
+        .decode(pdf_base64)
+        .map_err(|e| format!("decode: {e}"))?;
+
+    let soffice = locate_soffice(soffice_path.as_deref()).ok_or(LIBREOFFICE_NOT_FOUND)?;
+
+    // Temp workspace: input PDF + a fresh profile + output dir, all disposable.
+    let work = unique_temp_dir("export").map_err(|e| format!("temp dir: {e}"))?;
+    let profile = work.join("profile");
+    let outdir = work.join("out");
+    std::fs::create_dir_all(&profile).map_err(|e| format!("temp profile: {e}"))?;
+    std::fs::create_dir_all(&outdir).map_err(|e| format!("temp out: {e}"))?;
+
+    let input_pdf = work.join("input.pdf");
+    std::fs::write(&input_pdf, &bytes).map_err(|e| format!("write input: {e}"))?;
+
+    let log_path = work.join("soffice.log");
+    let log = File::create(&log_path).ok();
+
+    let run = |stdout: Stdio, stderr: Stdio| {
+        Command::new(&soffice)
+            .arg("--headless")
+            .arg("--norestore")
+            .arg(format!("-env:UserInstallation={}", to_file_url(&profile)))
+            .arg("--infilter=writer_pdf_import")
+            .arg("--convert-to")
+            .arg("docx:MS Word 2007 XML")
+            .arg("--outdir")
+            .arg(&outdir)
+            .arg(&input_pdf)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+    };
+
+    let spawned = match log {
+        Some(f) => {
+            let f2 = f.try_clone().map_err(|e| format!("log: {e}"))?;
+            run(Stdio::from(f), Stdio::from(f2))
+        }
+        None => run(Stdio::null(), Stdio::null()),
+    };
+    let mut child = spawned.map_err(|e| format!("launch LibreOffice: {e}"))?;
+
+    let code = wait_with_timeout(&mut child, CONVERT_TIMEOUT).inspect_err(|_| {
+        let _ = std::fs::remove_dir_all(&work);
+    })?;
+
+    let produced = outdir.join("input.docx");
+    if code != 0 || !produced.is_file() {
+        let log_tail = std::fs::read_to_string(&log_path).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&work);
+        let detail = log_tail.lines().last().unwrap_or("").trim();
+        return Err(format!(
+            "LibreOffice conversion failed (exit {code}){}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
+        ));
+    }
+
+    // Move the result to the user's chosen path (copy + drop the temp tree).
+    let copy_res = std::fs::copy(&produced, &output_docx_path);
+    let _ = std::fs::remove_dir_all(&work);
+    copy_res.map_err(|e| format!("write output: {e}"))?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Path this (first) instance was launched with, before the webview exists.
@@ -80,7 +275,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file_base64,
             write_file_base64,
-            get_launch_file
+            get_launch_file,
+            convert_pdf_to_docx
         ])
         .run(tauri::generate_context!())
         .expect("error while running PdfModdy");
@@ -88,10 +284,30 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_pdf_path;
+    use super::{extract_pdf_path, locate_soffice, to_file_url};
+    use std::path::Path;
 
     fn args(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn file_url_uses_forward_slashes_and_triple_slash() {
+        assert_eq!(
+            to_file_url(Path::new(r"C:\Users\x\profile")),
+            "file:///C:/Users/x/profile"
+        );
+    }
+
+    #[test]
+    fn missing_soffice_is_none() {
+        // A path that does not exist, no PATH match in the test env's common dirs.
+        let got = locate_soffice(Some(r"Z:\nope\soffice.exe"));
+        // Either None (not installed) or a real install found via common paths;
+        // both are valid — just assert a configured bogus path is not returned.
+        if let Some(p) = got {
+            assert_ne!(p.to_string_lossy(), r"Z:\nope\soffice.exe");
+        }
     }
 
     #[test]
@@ -127,5 +343,29 @@ mod tests {
     fn no_args_means_no_file() {
         let a = args(&["pdfmoddy.exe"]);
         assert_eq!(extract_pdf_path(&a), None);
+    }
+
+    /// Real end-to-end conversion through the actual command. Ignored by default
+    /// (needs LibreOffice + a sample PDF), so CI stays green without them. Run:
+    ///   PDFMODDY_TEST_PDF=<path> cargo test -- --ignored real_conversion
+    /// Optional: PDFMODDY_TEST_SOFFICE=<soffice path> to force a specific install.
+    #[test]
+    #[ignore]
+    fn real_conversion_end_to_end() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let pdf = std::env::var("PDFMODDY_TEST_PDF").expect("set PDFMODDY_TEST_PDF");
+        let bytes = std::fs::read(&pdf).expect("read sample pdf");
+        let b64 = STANDARD.encode(bytes);
+        let out = std::env::temp_dir().join("pdfmoddy_test_out.docx");
+        let _ = std::fs::remove_file(&out);
+        let soffice = std::env::var("PDFMODDY_TEST_SOFFICE").ok();
+
+        super::convert_pdf_to_docx(b64, out.to_string_lossy().into_owned(), soffice)
+            .expect("conversion should succeed");
+
+        let produced = std::fs::read(&out).expect("output docx exists");
+        assert!(produced.len() > 1000, "docx looks too small");
+        assert_eq!(&produced[0..2], b"PK", "output is not a zip/OOXML file");
+        let _ = std::fs::remove_file(&out);
     }
 }

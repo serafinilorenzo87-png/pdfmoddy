@@ -2,7 +2,16 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
-	import { openPdfDialog, loadPdfDocument, savePdfBytes, type LoadedPdf } from '$lib/pdf/viewer';
+	import {
+		openPdfDialog,
+		loadPdfDocument,
+		savePdfBytes,
+		saveDocxDialog,
+		pickSofficeDialog,
+		convertPdfToDocx,
+		LIBREOFFICE_NOT_FOUND,
+		type LoadedPdf
+	} from '$lib/pdf/viewer';
 	import { bakeAnnotations } from '$lib/pdf/bake';
 	import { annotations } from '$lib/pdf/annotations.svelte';
 	import { signatures } from '$lib/pdf/signatures.svelte';
@@ -23,6 +32,27 @@
 	let sigModalOpen = $state(false);
 	const scale = 1.5;
 
+	// ── Word export (LibreOffice) ─────────────────────────────────────────────
+	const SOFFICE_KEY = 'pdfmoddy.soffice.v1';
+	function loadSoffice(): string | null {
+		try {
+			return localStorage.getItem(SOFFICE_KEY);
+		} catch {
+			return null;
+		}
+	}
+	function saveSoffice(path: string): void {
+		try {
+			localStorage.setItem(SOFFICE_KEY, path);
+		} catch {
+			// best-effort; export still works this session with the path in memory
+		}
+	}
+	let exporting = $state(false);
+	let exported = $state(false);
+	let needLibre = $state(false);
+	let sofficePath = $state<string | null>(loadSoffice());
+
 	const selected = $derived(
 		annotations.selectedId ? annotations.get(annotations.selectedId) : undefined
 	);
@@ -40,6 +70,8 @@
 	async function loadPath(path: string, name?: string) {
 		error = '';
 		saved = false;
+		exported = false;
+		needLibre = false;
 		try {
 			loading = true;
 			const doc = await loadPdfDocument(path);
@@ -130,6 +162,7 @@
 		if (!loaded) return;
 		error = '';
 		saved = false;
+		exported = false;
 		try {
 			saving = true;
 			const outBytes = await bakeAnnotations(
@@ -145,6 +178,47 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	/** Bake the current PDF (same bytes as "Salva PDF") and convert it to .docx. */
+	async function exportWord() {
+		if (!loaded) return;
+		error = '';
+		saved = false;
+		exported = false;
+		needLibre = false;
+		try {
+			exporting = true;
+			// Same "final" bytes as Save PDF: overlay + form values + flatten toggle,
+			// so the Word file includes the signatures / filled fields.
+			const outBytes = await bakeAnnotations(
+				loaded.bytes,
+				annotations.items,
+				formFields.hasForm ? formFields.values : undefined,
+				formFields.hasForm && formFields.flatten
+			);
+			const suggested = fileName.replace(/\.pdf$/i, '') + '.docx';
+			const outPath = await saveDocxDialog(suggested);
+			if (!outPath) return; // user cancelled the save dialog
+			await convertPdfToDocx(outBytes, outPath, sofficePath);
+			exported = true;
+		} catch (e) {
+			const msg = typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);
+			if (msg.includes(LIBREOFFICE_NOT_FOUND)) needLibre = true;
+			else error = t('export.failed', { err: msg });
+		} finally {
+			exporting = false;
+		}
+	}
+
+	/** Let the user point at soffice.exe, remember it, and retry the export. */
+	async function locateSoffice() {
+		const picked = await pickSofficeDialog();
+		if (!picked) return;
+		sofficePath = picked;
+		saveSoffice(picked);
+		needLibre = false;
+		await exportWord();
 	}
 </script>
 
@@ -263,6 +337,15 @@
 			class="rounded bg-white px-3 py-1.5 text-sm font-semibold text-brand transition-colors hover:bg-white/90 disabled:opacity-60"
 		>
 			{saving ? t('save.saving') : t('save.button')}
+		</button>
+
+		<button
+			onclick={exportWord}
+			disabled={exporting}
+			title={t('export.title')}
+			class="rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25 disabled:opacity-60"
+		>
+			{exporting ? t('export.exporting') : t('export.button')}
 		</button>
 
 		{#if formFields.hasForm}
@@ -393,7 +476,29 @@
 	{#if saved}
 		<span class="text-sm text-white/90">{t('save.done')}</span>
 	{/if}
+	{#if exported}
+		<span class="text-sm text-white/90">{t('export.done')}</span>
+	{/if}
 </header>
+
+{#if needLibre}
+	<div
+		class="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-ink"
+	>
+		<span>⚠️ {t('export.needLibre')}</span>
+		<button
+			onclick={locateSoffice}
+			class="rounded bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-dark"
+		>
+			{t('export.locate')}
+		</button>
+		<button
+			onclick={() => (needLibre = false)}
+			aria-label={t('common.close')}
+			class="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink">✕</button
+		>
+	</div>
+{/if}
 
 {#if error}
 	<div class="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-brand-dark">

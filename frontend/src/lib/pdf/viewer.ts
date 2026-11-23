@@ -100,6 +100,12 @@ export async function renderAllPages(
     }
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+}
+
 /** Write bytes to disk via the Rust command, through a native "save" dialog. */
 export async function savePdfBytes(bytes: Uint8Array, suggestedName = 'documento.pdf'): Promise<boolean> {
     const path = await save({
@@ -107,9 +113,41 @@ export async function savePdfBytes(bytes: Uint8Array, suggestedName = 'documento
         filters: [{ name: 'PDF', extensions: ['pdf'] }]
     });
     if (!path) return false;
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    const b64 = btoa(bin);
-    await invoke('write_file_base64', { path, data: b64 });
+    await invoke('write_file_base64', { path, data: bytesToBase64(bytes) });
     return true;
+}
+
+/** Error code the Rust converter returns when no LibreOffice install is found. */
+export const LIBREOFFICE_NOT_FOUND = 'LIBREOFFICE_NOT_FOUND';
+
+/** Native "save" dialog filtered to .docx. Returns the chosen path or null. */
+export async function saveDocxDialog(suggestedName = 'documento.docx'): Promise<string | null> {
+    const path = await save({
+        defaultPath: suggestedName,
+        filters: [{ name: 'Word', extensions: ['docx'] }]
+    });
+    return path ?? null;
+}
+
+/** Native "open" dialog to let the user point at their soffice executable. */
+export async function pickSofficeDialog(): Promise<string | null> {
+    const picked = await openFileDialog([{ name: 'LibreOffice (soffice)', extensions: ['exe', 'com'] }]);
+    return picked?.path ?? null;
+}
+
+/**
+ * Convert baked PDF bytes to a .docx at `outputDocxPath`, using the local
+ * LibreOffice via the Rust command. `sofficePath` is the user-configured
+ * executable, if any. Rejects with `LIBREOFFICE_NOT_FOUND` when none is found.
+ */
+export async function convertPdfToDocx(
+    pdfBytes: Uint8Array,
+    outputDocxPath: string,
+    sofficePath?: string | null
+): Promise<void> {
+    await invoke('convert_pdf_to_docx', {
+        pdfBase64: bytesToBase64(pdfBytes),
+        outputDocxPath,
+        sofficePath: sofficePath ?? null
+    });
 }

@@ -27,6 +27,15 @@ export const it = {
 	'save.button': 'Salva PDF',
 	'save.saving': 'Salvo…',
 	'save.done': 'PDF salvato.',
+	'export.button': 'Esporta in Word',
+	'export.title': 'Converte il PDF (con firme e compilazioni) in un documento Word .docx',
+	'export.exporting': 'Esporto…',
+	'export.done': 'Documento Word esportato.',
+	'export.failed': 'Export non riuscito: {err}',
+	'export.needLibre':
+		"Per l'export in Word serve LibreOffice (gratis, da libreoffice.org). Installalo, oppure indica il file soffice.exe.",
+	'export.locate': 'Indica soffice.exe',
+	'export.sofficeSaved': 'Percorso LibreOffice salvato.',
 
 	// Language switch
 	'lang.it': 'Italiano',

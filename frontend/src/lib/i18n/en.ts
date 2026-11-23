@@ -23,6 +23,15 @@ export const en: Record<MessageKey, string> = {
 	'save.button': 'Save PDF',
 	'save.saving': 'Saving…',
 	'save.done': 'PDF saved.',
+	'export.button': 'Export to Word',
+	'export.title': 'Convert the PDF (with signatures and filled fields) to a Word .docx document',
+	'export.exporting': 'Exporting…',
+	'export.done': 'Word document exported.',
+	'export.failed': 'Export failed: {err}',
+	'export.needLibre':
+		'Exporting to Word needs LibreOffice (free, from libreoffice.org). Install it, or point to the soffice.exe file.',
+	'export.locate': 'Locate soffice.exe',
+	'export.sofficeSaved': 'LibreOffice path saved.',
 
 	// Language switch
 	'lang.it': 'Italian',
