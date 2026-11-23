@@ -2,28 +2,28 @@
 	"Acquisisci firma" — import a signature into the library from an existing
 	file, three sources (all fully offline, no network / no external engine):
 
-	  • PDF   — render a page and drag a box around the signature, then crop it.
-	  • Immagine — pick a PNG/JPG/… scan or photo and import it directly.
-	  • Word/ODT — a .docx/.odt is a ZIP of embedded images; list them and pick
-	    one. (No page rendering: only inserted images, not typed text.)
+	  • PDF   — render a page and drag a box around the signature (coarse crop).
+	  • Immagine — pick a PNG/JPG/… scan or photo.
+	  • Word/ODT — a .docx/.odt is a ZIP of embedded images; pick one. (No page
+	    rendering: only inserted images, not typed text.)
 
-	Every source produces a raw canvas; the light background is optionally made
-	transparent and the result is cropped tight (see signatureImage.ts), so an
-	acquired signature flows into the SAME library + baking path as the drawn /
-	cursive ones.
+	Each source yields a raw canvas that is handed to <SignatureEditor> for
+	zoom / pan framing, background knockout and (for PDF) form-line removal. The
+	editor returns a tight transparent PNG, so every acquired signature flows
+	into the SAME library + baking path as the drawn / cursive ones.
 -->
 <script lang="ts">
 	import { openFileDialog, readFileBytes, loadPdfDocument, type LoadedPdf } from './viewer';
 	import {
 		loadImageToCanvas,
 		cropCanvas,
-		finalizeAcquired,
 		extractOfficeImages,
 		bytesToDataUrl,
 		imageMimeForName,
 		IMAGE_EXTENSIONS,
 		type ExtractedImage
 	} from './signatureImage';
+	import SignatureEditor from './SignatureEditor.svelte';
 
 	let {
 		onsave,
@@ -37,12 +37,9 @@
 	let source = $state<Source | null>(null);
 	let busy = $state(false);
 	let message = $state('');
-	let label = $state('');
 
-	// The acquired, pre-processing canvas (crop / imported image / picked media).
+	// The acquired raw canvas, handed to the editor once set.
 	let staged = $state<HTMLCanvasElement | null>(null);
-	let removeBackground = $state(true);
-	let threshold = $state(0.8);
 
 	// ── PDF source ─────────────────────────────────────────────────────────────
 	let pdf = $state<LoadedPdf | null>(null);
@@ -61,10 +58,13 @@
 		pageIndex = 0;
 		sel = null;
 		officeImages = [];
-		label = '';
 		message = '';
-		removeBackground = true;
-		threshold = 0.8;
+	}
+
+	function handleEditorSave(sig: { label: string; pngDataUrl: string; aspect: number }) {
+		onsave(sig);
+		resetAll();
+		ondone();
 	}
 
 	// ── Image import ───────────────────────────────────────────────────────────
@@ -81,7 +81,6 @@
 			}
 			const bytes = await readFileBytes(picked.path);
 			staged = await loadImageToCanvas(bytesToDataUrl(bytes, mime));
-			if (!label) label = picked.name.replace(/\.[^.]+$/, '');
 		} catch (e) {
 			message = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -101,10 +100,8 @@
 			staged = null;
 			if (officeImages.length === 0) {
 				message = 'Nessuna immagine incorporata trovata nel documento.';
-			} else if (!label) {
-				label = picked.name.replace(/\.[^.]+$/, '');
 			}
-		} catch (e) {
+		} catch {
 			message = 'Documento non leggibile (serve un .docx o .odt valido).';
 		} finally {
 			busy = false;
@@ -134,7 +131,6 @@
 			pageIndex = 0;
 			sel = null;
 			staged = null;
-			if (!label) label = picked.name.replace(/\.[^.]+$/, '');
 		} catch (e) {
 			message = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -147,7 +143,7 @@
 		const doc = pdf;
 		const idx = pageIndex;
 		const el = pdfCanvasEl;
-		if (!doc || !el) return;
+		if (!doc || !el || staged) return;
 		let cancelled = false;
 		(async () => {
 			const page = await doc.pdf.getPage(idx + 1);
@@ -181,7 +177,6 @@
 		const rect = pdfCanvasEl.getBoundingClientRect();
 		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 		selecting = true;
-		staged = null;
 		sel = {
 			x0: e.clientX - rect.left,
 			y0: e.clientY - rect.top,
@@ -203,38 +198,26 @@
 			sel = null;
 			return;
 		}
-		// Map the CSS-pixel selection to the canvas's own pixel grid.
+		// Map the CSS-pixel selection to the canvas's own pixel grid, then crop;
+		// the crop opens in the editor for refinement + line removal.
 		const rect = pdfCanvasEl.getBoundingClientRect();
 		const sx = pdfCanvasEl.width / rect.width;
 		const sy = pdfCanvasEl.height / rect.height;
 		staged = cropCanvas(pdfCanvasEl, r.left * sx, r.top * sy, r.width * sx, r.height * sy);
 	}
-
-	// Live preview of the finalized signature (bg removal + trim applied).
-	const preview = $derived.by(() => {
-		if (!staged) return null;
-		// re-run when the toggle / threshold change
-		void removeBackground;
-		void threshold;
-		return finalizeAcquired(staged, { removeBackground, threshold });
-	});
-
-	function save() {
-		if (!staged) return;
-		const result = finalizeAcquired(staged, { removeBackground, threshold });
-		if (!result) {
-			message = removeBackground
-				? 'Niente da salvare: prova ad abbassare la soglia o a disattivare la trasparenza.'
-				: 'Niente da salvare.';
-			return;
-		}
-		onsave({ label: label.trim() || 'Firma acquisita', pngDataUrl: result.dataUrl, aspect: result.aspect });
-		resetAll();
-		ondone();
-	}
 </script>
 
-{#if source === null}
+{#if staged}
+	<SignatureEditor
+		source={staged}
+		allowLineRemoval={source === 'pdf'}
+		onsave={handleEditorSave}
+		oncancel={() => {
+			staged = null;
+			sel = null;
+		}}
+	/>
+{:else if source === null}
 	<p class="mb-3 text-sm text-ink-muted">Da dove vuoi prendere la firma?</p>
 	<div class="grid grid-cols-3 gap-2">
 		<button
@@ -264,11 +247,9 @@
 	</div>
 {:else}
 	<div class="mb-3 flex items-center gap-2">
-		<button
-			type="button"
-			class="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink"
-			onclick={resetAll}>← Cambia sorgente</button
-		>
+		<button type="button" class="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink" onclick={resetAll}>
+			← Cambia sorgente
+		</button>
 		{#if source === 'image'}
 			<button
 				type="button"
@@ -306,7 +287,6 @@
 						onclick={() => {
 							pageIndex -= 1;
 							sel = null;
-							staged = null;
 						}}>‹</button
 					>
 					Pag. {pageIndex + 1}/{pdf.numPages}
@@ -317,7 +297,6 @@
 						onclick={() => {
 							pageIndex += 1;
 							sel = null;
-							staged = null;
 						}}>›</button
 					>
 				</span>
@@ -361,45 +340,7 @@
 		</div>
 	{/if}
 
-	<!-- Shared: preview + background knockout + label + save -->
-	{#if preview}
-		<div class="mt-3 rounded border border-brand-light bg-white p-3">
-			<div
-				class="flex min-h-20 items-center justify-center"
-				style:background-image="repeating-linear-gradient(45deg, #f6f6f6 0 10px, #fff 10px 20px)"
-			>
-				<img src={preview.dataUrl} alt="Anteprima firma" class="max-h-24 max-w-full" />
-			</div>
-			<label class="mt-3 flex items-center gap-2 text-xs text-ink">
-				<input type="checkbox" bind:checked={removeBackground} />
-				Rendi lo sfondo chiaro trasparente
-			</label>
-			{#if removeBackground}
-				<label class="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-					Soglia
-					<input type="range" min="0.5" max="0.98" step="0.02" bind:value={threshold} class="w-40" />
-					<span>{threshold.toFixed(2)}</span>
-				</label>
-			{/if}
-		</div>
-	{/if}
-
 	{#if message}
 		<p class="mt-2 text-sm text-brand-dark">{message}</p>
 	{/if}
-
-	<div class="mt-4 flex items-center justify-end gap-2">
-		<input
-			type="text"
-			bind:value={label}
-			placeholder="Etichetta (facoltativa)"
-			class="mr-auto w-56 rounded border border-brand-light px-2 py-1 text-sm text-ink outline-none focus:border-brand"
-		/>
-		<button
-			type="button"
-			disabled={!preview}
-			class="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
-			onclick={save}>Salva in libreria</button
-		>
-	</div>
 {/if}

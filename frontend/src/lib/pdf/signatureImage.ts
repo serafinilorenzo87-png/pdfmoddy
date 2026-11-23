@@ -130,6 +130,93 @@ export function removeLightBackground(canvas: HTMLCanvasElement, threshold = 0.8
 	ctx.putImageData(img, 0, 0);
 }
 
+/**
+ * Erase horizontal form rules (the printed line a signature sits on) while
+ * keeping the signature itself. Works on the ALPHA channel (run after
+ * {@link removeLightBackground}, so ink is opaque and background transparent).
+ *
+ * Heuristic: a form line is a thin, near-full-width band of opaque pixels. We
+ * find rows whose longest contiguous opaque run covers at least `minCoverage`
+ * of the width, group consecutive such rows into bands, and erase only the thin
+ * ones (`maxThickness`). To avoid cutting strokes that cross the line, columns
+ * where ink continues both just above and just below the band are "bridged"
+ * (kept), so a descender/loop passing through the rule stays connected.
+ * Mutates `canvas` in place.
+ */
+export function removeHorizontalLines(
+	canvas: HTMLCanvasElement,
+	opts: { minCoverage?: number; maxThickness?: number; bridge?: boolean } = {}
+): void {
+	const ctx = canvas.getContext('2d');
+	const w = canvas.width;
+	const h = canvas.height;
+	if (!ctx || w === 0 || h === 0) return;
+	const minCoverage = opts.minCoverage ?? 0.55;
+	const maxThickness = opts.maxThickness ?? Math.max(3, Math.round(h * 0.06));
+	const bridge = opts.bridge ?? true;
+
+	const img = ctx.getImageData(0, 0, w, h);
+	const a = img.data;
+	const OPAQUE = 40;
+	const opaqueAt = (x: number, y: number) => a[(y * w + x) * 4 + 3] > OPAQUE;
+
+	const rowIsLine: boolean[] = new Array(h).fill(false);
+	const need = minCoverage * w;
+	for (let y = 0; y < h; y++) {
+		let run = 0;
+		let best = 0;
+		for (let x = 0; x < w; x++) {
+			if (opaqueAt(x, y)) {
+				run += 1;
+				if (run > best) best = run;
+			} else {
+				run = 0;
+			}
+		}
+		rowIsLine[y] = best >= need;
+	}
+
+	let y = 0;
+	while (y < h) {
+		if (!rowIsLine[y]) {
+			y += 1;
+			continue;
+		}
+		let y1 = y;
+		while (y1 + 1 < h && rowIsLine[y1 + 1]) y1 += 1;
+		const thickness = y1 - y + 1;
+		if (thickness <= maxThickness) {
+			const aboveTop = Math.max(0, y - 3);
+			const belowBot = Math.min(h - 1, y1 + 3);
+			for (let x = 0; x < w; x++) {
+				let keep = false;
+				if (bridge) {
+					let hasAbove = false;
+					for (let yy = aboveTop; yy < y; yy++) {
+						if (opaqueAt(x, yy)) {
+							hasAbove = true;
+							break;
+						}
+					}
+					let hasBelow = false;
+					for (let yy = y1 + 1; yy <= belowBot; yy++) {
+						if (opaqueAt(x, yy)) {
+							hasBelow = true;
+							break;
+						}
+					}
+					keep = hasAbove && hasBelow;
+				}
+				if (!keep) {
+					for (let yy = y; yy <= y1; yy++) a[(yy * w + x) * 4 + 3] = 0;
+				}
+			}
+		}
+		y = y1 + 1;
+	}
+	ctx.putImageData(img, 0, 0);
+}
+
 /** Load an image (data/blob URL) into a fresh canvas at its natural size. */
 export function loadImageToCanvas(src: string): Promise<HTMLCanvasElement> {
 	return new Promise((resolve, reject) => {
@@ -230,10 +317,11 @@ export function extractOfficeImages(bytes: Uint8Array): ExtractedImage[] {
  */
 export function finalizeAcquired(
 	source: HTMLCanvasElement,
-	opts: { removeBackground: boolean; threshold?: number }
+	opts: { removeBackground: boolean; threshold?: number; removeLines?: boolean }
 ): RasterizedSignature | null {
 	// Work on a copy so the on-screen preview source isn't mutated.
 	const work = cropCanvas(source, 0, 0, source.width, source.height);
 	if (opts.removeBackground) removeLightBackground(work, opts.threshold);
+	if (opts.removeLines) removeHorizontalLines(work);
 	return trimToPng(work);
 }
