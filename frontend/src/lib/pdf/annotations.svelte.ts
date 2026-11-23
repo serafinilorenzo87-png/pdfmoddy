@@ -1,0 +1,89 @@
+/**
+ * Annotation model + store for PdfModdy (Svelte 5 runes).
+ *
+ * An annotation is a visual overlay that gets "baked" onto the PDF on save.
+ * Milestone 2 ships the `text` type; signatures / checkmarks / form fields in
+ * later milestones are just new `type`s sharing this exact storage and the
+ * same point-based coordinates, so the model is intentionally open.
+ *
+ * ── Coordinate convention (IMPORTANT) ───────────────────────────────────────
+ * `xPt` / `yPt` are PDF **points** (origin bottom-left, y up) of the box's
+ * on-screen **top-left** corner. So the box spans:
+ *     x:  [xPt, xPt + wPt]
+ *     y:  [yPt - hPt, yPt]      (yPt is the TOP edge; it has the larger y)
+ * Storing points — not pixels — keeps positions stable across zoom levels.
+ * See `coords.ts` for the pixel⇄point conversions.
+ */
+
+export type AnnotationType = 'text';
+
+export interface TextAnnotation {
+	id: string;
+	pageIndex: number;
+	type: 'text';
+	/** PDF-point x of the box's top-left corner (origin bottom-left). */
+	xPt: number;
+	/** PDF-point y of the box's TOP edge (origin bottom-left, y up). */
+	yPt: number;
+	/** Box width in PDF points. */
+	wPt: number;
+	/** Box height in PDF points. */
+	hPt: number;
+	text: string;
+	/** Font size in PDF points. */
+	fontSize: number;
+	/** Hex color, e.g. `#1A1A1A`. */
+	color: string;
+}
+
+export type Annotation = TextAnnotation;
+
+/** Which placement tool is armed (a click on a page then drops an annotation). */
+export type Tool = 'none' | 'text';
+
+let idCounter = 0;
+function nextId(): string {
+	idCounter += 1;
+	return `ann_${Date.now().toString(36)}_${idCounter}`;
+}
+
+class AnnotationStore {
+	/** All annotations, across every page. Deeply reactive (runes proxy). */
+	items = $state<Annotation[]>([]);
+	/** Currently selected annotation id, or null. */
+	selectedId = $state<string | null>(null);
+	/** Armed placement tool. */
+	tool = $state<Tool>('none');
+
+	/** Annotations belonging to one page (0-based), in insertion order. */
+	forPage(pageIndex: number): Annotation[] {
+		return this.items.filter((a) => a.pageIndex === pageIndex);
+	}
+
+	/** Add a text annotation; returns its id. Defaults fill in the boring bits. */
+	addText(init: Omit<TextAnnotation, 'id' | 'type'>): string {
+		const id = nextId();
+		this.items.push({ id, type: 'text', ...init });
+		return id;
+	}
+
+	remove(id: string): void {
+		const i = this.items.findIndex((a) => a.id === id);
+		if (i !== -1) this.items.splice(i, 1);
+		if (this.selectedId === id) this.selectedId = null;
+	}
+
+	/** Look up a single annotation (returns the reactive proxy, so mutate freely). */
+	get(id: string): Annotation | undefined {
+		return this.items.find((a) => a.id === id);
+	}
+
+	clear(): void {
+		this.items = [];
+		this.selectedId = null;
+		this.tool = 'none';
+	}
+}
+
+/** Singleton store shared by the viewer and every page overlay. */
+export const annotations = new AnnotationStore();
