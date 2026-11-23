@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import { listen } from '@tauri-apps/api/event';
 	import { openPdfDialog, loadPdfDocument, savePdfBytes, type LoadedPdf } from '$lib/pdf/viewer';
 	import { bakeAnnotations } from '$lib/pdf/bake';
 	import { annotations } from '$lib/pdf/annotations.svelte';
@@ -28,18 +31,20 @@
 		return annotations.tool === 'symbol' && annotations.symbolDefaults.symbol === sym;
 	}
 
-	async function openPdf() {
+	/**
+	 * Load a PDF from an absolute path into the viewer. Shared by the "Apri PDF"
+	 * dialog and the file-association launch (Windows "Open with" / default app).
+	 */
+	async function loadPath(path: string, name?: string) {
 		error = '';
 		status = '';
 		try {
-			const picked = await openPdfDialog();
-			if (!picked) return;
 			loading = true;
-			const doc = await loadPdfDocument(picked.path);
+			const doc = await loadPdfDocument(path);
 			annotations.clear(); // fresh document, fresh overlay
 			formFields.clear();
 			loaded = doc;
-			fileName = picked.name;
+			fileName = name ?? path.split(/[\\/]/).pop() ?? path;
 			// Detect existing AcroForm fields so they become directly fillable.
 			// A malformed form must not block opening the document for overlay use.
 			try {
@@ -54,6 +59,37 @@
 			loading = false;
 		}
 	}
+
+	async function openPdf() {
+		error = '';
+		const picked = await openPdfDialog();
+		if (!picked) return;
+		await loadPath(picked.path, picked.name);
+	}
+
+	// File-association entry points. On startup, open the PDF this instance was
+	// launched with (if any); while running, a second "Open with" arrives as an
+	// "open-file" event from the single-instance plugin (window already raised
+	// by Rust). Both reuse the exact same load path as the dialog.
+	onMount(() => {
+		let unlisten: (() => void) | undefined;
+		(async () => {
+			try {
+				const launchPath = await invoke<string | null>('get_launch_file');
+				if (launchPath) await loadPath(launchPath);
+			} catch {
+				// Not running under Tauri (plain browser dev) — nothing to open.
+			}
+			try {
+				unlisten = await listen<string>('open-file', (e) => {
+					if (e.payload) loadPath(e.payload);
+				});
+			} catch {
+				// Event system unavailable — dialog opening still works.
+			}
+		})();
+		return () => unlisten?.();
+	});
 
 	function addText() {
 		if (!loaded) return;

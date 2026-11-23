@@ -30,13 +30,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
+    "targets": ["msi", "nsis"],
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
     ],
     "category": "Productivity",
     "shortDescription": "Local PDF signing & form filling",
-    "longDescription": "PdfModdy — firma e compila documenti PDF in locale su Windows."
+    "longDescription": "PdfModdy — firma e compila documenti PDF in locale su Windows.",
+    "fileAssociations": [
+      {
+        "ext": ["pdf"],
+        "name": "PDF Document",
+        "description": "Apri e compila i PDF con PdfModdy",
+        "mimeType": "application/pdf",
+        "role": "Editor"
+      }
+    ]
   }
 }
