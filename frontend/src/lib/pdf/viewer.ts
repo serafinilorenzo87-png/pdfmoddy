@@ -33,15 +33,24 @@ export interface PickedFile {
 
 /** Native "open file" dialog, filtered to PDFs. Returns null if cancelled. */
 export async function openPdfDialog(): Promise<PickedFile | null> {
-    const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }]
-    });
+    return openFileDialog([{ name: 'PDF', extensions: ['pdf'] }]);
+}
+
+/** Native "open file" dialog with custom filters. Returns null if cancelled. */
+export async function openFileDialog(
+    filters: { name: string; extensions: string[] }[]
+): Promise<PickedFile | null> {
+    const selected = await open({ multiple: false, directory: false, filters });
     if (!selected || Array.isArray(selected)) return null;
     const path = selected as string;
     const name = path.split(/[\\/]/).pop() ?? path;
     return { path, name };
+}
+
+/** Read any file from disk as raw bytes (via the same Rust base64 command). */
+export async function readFileBytes(path: string): Promise<Uint8Array> {
+    const b64 = await invoke<string>('read_file_base64', { path });
+    return base64ToBytes(b64);
 }
 
 function base64ToBytes(b64: string): Uint8Array {

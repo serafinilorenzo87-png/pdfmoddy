@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { trimToPng, renderCursiveName, type RasterizedSignature } from './signatureImage';
+	import AcquireSignature from './AcquireSignature.svelte';
 
 	let {
 		open = false,
@@ -19,7 +20,7 @@
 		onclose: () => void;
 	} = $props();
 
-	type Mode = 'draw' | 'name';
+	type Mode = 'draw' | 'name' | 'acquire';
 	let mode = $state<Mode>('draw');
 	let label = $state('');
 	let typedName = $state('');
@@ -184,6 +185,16 @@
 						message = '';
 					}}>Nome in corsivo</button
 				>
+				<button
+					type="button"
+					class={mode === 'acquire'
+						? 'rounded-t border-b-2 border-brand px-3 py-1.5 text-sm font-semibold text-brand'
+						: 'rounded-t px-3 py-1.5 text-sm text-ink-muted hover:text-ink'}
+					onclick={() => {
+						mode = 'acquire';
+						message = '';
+					}}>Acquisisci</button
+				>
 			</div>
 
 			<div class="px-4 py-4">
@@ -209,7 +220,7 @@
 						class="mt-2 rounded border border-brand-light px-2.5 py-1 text-xs text-brand hover:bg-brand-light/20"
 						onclick={clearCanvas}>Pulisci</button
 					>
-				{:else}
+				{:else if mode === 'name'}
 					<label class="mb-1 block text-sm text-ink-muted" for="sig-name-input">
 						Nome da rendere in corsivo (font di sistema "Segoe Script")
 					</label>
@@ -230,39 +241,45 @@
 							<span class="text-sm text-ink-muted">Anteprima</span>
 						{/if}
 					</div>
+				{:else}
+					<AcquireSignature {onsave} ondone={close} />
 				{/if}
 
-				<div class="mt-4">
-					<label class="mb-1 block text-xs text-ink-muted" for="sig-label-input">
-						Etichetta (facoltativa)
-					</label>
-					<input
-						id="sig-label-input"
-						type="text"
-						bind:value={label}
-						placeholder={mode === 'name' ? 'Es. Firma Mario' : 'Es. Firma 1'}
-						class="w-56 rounded border border-brand-light px-2 py-1 text-sm text-ink outline-none focus:border-brand"
-					/>
-				</div>
+				{#if mode !== 'acquire'}
+					<div class="mt-4">
+						<label class="mb-1 block text-xs text-ink-muted" for="sig-label-input">
+							Etichetta (facoltativa)
+						</label>
+						<input
+							id="sig-label-input"
+							type="text"
+							bind:value={label}
+							placeholder={mode === 'name' ? 'Es. Firma Mario' : 'Es. Firma 1'}
+							class="w-56 rounded border border-brand-light px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+						/>
+					</div>
+				{/if}
 
 				{#if message}
 					<p class="mt-3 text-sm text-brand-dark">{message}</p>
 				{/if}
 			</div>
 
-			<footer class="flex justify-end gap-2 border-t border-brand-light/60 px-4 py-3">
-				<button
-					type="button"
-					class="rounded px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-					onclick={close}>Annulla</button
-				>
-				<button
-					type="button"
-					class="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
-					disabled={mode === 'draw' ? !hasInk : !typedName.trim()}
-					onclick={save}>Salva firma</button
-				>
-			</footer>
+			{#if mode !== 'acquire'}
+				<footer class="flex justify-end gap-2 border-t border-brand-light/60 px-4 py-3">
+					<button
+						type="button"
+						class="rounded px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
+						onclick={close}>Annulla</button
+					>
+					<button
+						type="button"
+						class="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
+						disabled={mode === 'draw' ? !hasInk : !typedName.trim()}
+						onclick={save}>Salva firma</button
+					>
+				</footer>
+			{/if}
 		</div>
 	</div>
 {/if}
