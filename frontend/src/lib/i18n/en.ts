@@ -32,6 +32,8 @@ export const en: Record<MessageKey, string> = {
 		'Exporting to Word needs LibreOffice (free, from libreoffice.org). Install it, or point to the soffice.exe file.',
 	'export.locate': 'Locate soffice.exe',
 	'export.sofficeSaved': 'LibreOffice path saved.',
+	'export.engineDetected': 'Word export uses the LibreOffice engine (detected).',
+	'export.engineMissingShort': 'LibreOffice not detected',
 
 	// Language switch
 	'lang.it': 'Italian',

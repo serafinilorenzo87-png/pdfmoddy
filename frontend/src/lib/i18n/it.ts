@@ -36,6 +36,8 @@ export const it = {
 		"Per l'export in Word serve LibreOffice (gratis, da libreoffice.org). Installalo, oppure indica il file soffice.exe.",
 	'export.locate': 'Indica soffice.exe',
 	'export.sofficeSaved': 'Percorso LibreOffice salvato.',
+	'export.engineDetected': "L'export in Word usa il motore LibreOffice (rilevato).",
+	'export.engineMissingShort': 'LibreOffice non rilevato',
 
 	// Language switch
 	'lang.it': 'Italiano',

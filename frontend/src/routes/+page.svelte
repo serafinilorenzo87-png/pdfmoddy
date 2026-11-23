@@ -50,8 +50,23 @@
 	}
 	let exporting = $state(false);
 	let exported = $state(false);
-	let needLibre = $state(false);
 	let sofficePath = $state<string | null>(loadSoffice());
+	// Proactive LibreOffice detection, so the UI shows up-front whether Word
+	// export is ready — not only after a failed attempt.
+	let sofficeDetected = $state<string | null>(null);
+	let sofficeChecked = $state(false);
+	let libreDismissed = $state(false);
+	let pendingExport = $state(false);
+
+	async function refreshSoffice() {
+		try {
+			sofficeDetected = await invoke<string | null>('check_soffice', { sofficePath });
+		} catch {
+			sofficeDetected = null; // not under Tauri (plain browser) — treat as unknown
+		} finally {
+			sofficeChecked = true;
+		}
+	}
 
 	const selected = $derived(
 		annotations.selectedId ? annotations.get(annotations.selectedId) : undefined
@@ -71,7 +86,8 @@
 		error = '';
 		saved = false;
 		exported = false;
-		needLibre = false;
+		libreDismissed = false;
+		pendingExport = false;
 		try {
 			loading = true;
 			const doc = await loadPdfDocument(path);
@@ -107,6 +123,7 @@
 	// by Rust). Both reuse the exact same load path as the dialog.
 	onMount(() => {
 		let unlisten: (() => void) | undefined;
+		refreshSoffice(); // proactively detect LibreOffice for the export indicator
 		(async () => {
 			try {
 				const launchPath = await invoke<string | null>('get_launch_file');
@@ -186,7 +203,6 @@
 		error = '';
 		saved = false;
 		exported = false;
-		needLibre = false;
 		try {
 			exporting = true;
 			// Same "final" bytes as Save PDF: overlay + form values + flatten toggle,
@@ -204,21 +220,34 @@
 			exported = true;
 		} catch (e) {
 			const msg = typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);
-			if (msg.includes(LIBREOFFICE_NOT_FOUND)) needLibre = true;
-			else error = t('export.failed', { err: msg });
+			if (msg.includes(LIBREOFFICE_NOT_FOUND)) {
+				// Detection and reality disagree (e.g. LibreOffice was moved): surface
+				// the banner and remember that an export is waiting on it.
+				sofficeDetected = null;
+				sofficeChecked = true;
+				libreDismissed = false;
+				pendingExport = true;
+			} else {
+				error = t('export.failed', { err: msg });
+			}
 		} finally {
 			exporting = false;
 		}
 	}
 
-	/** Let the user point at soffice.exe, remember it, and retry the export. */
+	/** Let the user point at soffice.exe, remember it, re-detect, and (if an
+	 *  export was waiting) retry it. */
 	async function locateSoffice() {
 		const picked = await pickSofficeDialog();
 		if (!picked) return;
 		sofficePath = picked;
 		saveSoffice(picked);
-		needLibre = false;
-		await exportWord();
+		await refreshSoffice();
+		libreDismissed = false;
+		if (sofficeDetected && pendingExport) {
+			pendingExport = false;
+			await exportWord();
+		}
 	}
 </script>
 
@@ -339,14 +368,33 @@
 			{saving ? t('save.saving') : t('save.button')}
 		</button>
 
-		<button
-			onclick={exportWord}
-			disabled={exporting}
-			title={t('export.title')}
-			class="rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25 disabled:opacity-60"
-		>
-			{exporting ? t('export.exporting') : t('export.button')}
-		</button>
+		<div class="flex items-center gap-1">
+			<button
+				onclick={exportWord}
+				disabled={exporting}
+				title={t('export.title')}
+				class="rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25 disabled:opacity-60"
+			>
+				{exporting ? t('export.exporting') : t('export.button')}
+			</button>
+			{#if sofficeChecked}
+				{#if sofficeDetected}
+					<!-- LibreOffice present → discreet info marker. -->
+					<span
+						class="cursor-help select-none text-xs text-white/70"
+						title={t('export.engineDetected')}
+						aria-label={t('export.engineDetected')}>ⓘ</span
+					>
+				{:else}
+					<!-- LibreOffice missing → small visible warning (full banner below). -->
+					<span
+						class="cursor-help select-none text-xs text-amber-200"
+						title={t('export.needLibre')}
+						aria-label={t('export.engineMissingShort')}>⚠</span
+					>
+				{/if}
+			{/if}
+		</div>
 
 		{#if formFields.hasForm}
 			<div
@@ -481,7 +529,7 @@
 	{/if}
 </header>
 
-{#if needLibre}
+{#if loaded && sofficeChecked && !sofficeDetected && !libreDismissed}
 	<div
 		class="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-ink"
 	>
@@ -493,7 +541,7 @@
 			{t('export.locate')}
 		</button>
 		<button
-			onclick={() => (needLibre = false)}
+			onclick={() => (libreDismissed = true)}
 			aria-label={t('common.close')}
 			class="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink">✕</button
 		>

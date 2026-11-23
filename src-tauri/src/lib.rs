@@ -160,6 +160,15 @@ fn wait_with_timeout(child: &mut std::process::Child, timeout: Duration) -> Resu
     }
 }
 
+/// Report whether a usable LibreOffice is available (and where), so the UI can
+/// proactively show that Word export is ready — or that LibreOffice is missing —
+/// before the user even tries to export. `soffice_path` is the user-configured
+/// executable, if any. Returns the resolved executable path, or `None`.
+#[tauri::command]
+fn check_soffice(soffice_path: Option<String>) -> Option<String> {
+    locate_soffice(soffice_path.as_deref()).map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Convert a PDF (given as base64 bytes) to a .docx at `output_docx_path`, using
 /// a locally installed LibreOffice. `soffice_path` is the user-configured
 /// executable, if any. Returns `LIBREOFFICE_NOT_FOUND` when no install is found.
@@ -276,6 +285,7 @@ pub fn run() {
             read_file_base64,
             write_file_base64,
             get_launch_file,
+            check_soffice,
             convert_pdf_to_docx
         ])
         .run(tauri::generate_context!())
@@ -284,7 +294,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_pdf_path, locate_soffice, to_file_url};
+    use super::{check_soffice, extract_pdf_path, locate_soffice, to_file_url};
     use std::path::Path;
 
     fn args(parts: &[&str]) -> Vec<String> {
@@ -343,6 +353,19 @@ mod tests {
     fn no_args_means_no_file() {
         let a = args(&["pdfmoddy.exe"]);
         assert_eq!(extract_pdf_path(&a), None);
+    }
+
+    /// Prints the detection result on THIS machine (ignored: machine-dependent).
+    /// Run: cargo test -- --ignored --nocapture detects_soffice
+    #[test]
+    #[ignore]
+    fn detects_soffice() {
+        let auto = check_soffice(None);
+        let with_bogus = check_soffice(Some(r"Z:\nope\soffice.exe".into()));
+        println!("check_soffice(None)        = {auto:?}");
+        println!("check_soffice(bogus config)= {with_bogus:?}");
+        // A bogus configured path must fall back to auto-detection, not be echoed.
+        assert_eq!(auto, with_bogus);
     }
 
     /// Real end-to-end conversion through the actual command. Ignored by default
