@@ -22,6 +22,7 @@ import type {
 	TextAnnotation
 } from './annotations.svelte';
 import { fontDef } from './fonts';
+import { applyFormValues, type FormFieldValue } from './forms';
 import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
 
 /** Fraction of em used as line advance when a text box holds multiple lines. */
@@ -112,13 +113,39 @@ function drawSignatureAnnotation(page: PDFPage, png: PDFImage, ann: SignatureAnn
 
 /**
  * Return a NEW PDF byte array: the original document with every annotation
- * stamped onto its page. `originalBytes` is not mutated.
+ * stamped onto its page, and (optionally) the existing AcroForm fields filled
+ * with `formValues`. `originalBytes` is not mutated.
+ *
+ * Order: fill the native form fields first, then stamp the overlay annotations
+ * on top, then — if `flattenForm` — flatten the form so the filled values
+ * become fixed page content (no longer editable). The overlay stamps are plain
+ * page content, independent of the form, so they survive flattening unchanged.
+ *
+ * @param formValues  Per-field values (keyed by field name); omit for PDFs
+ *                    without a form.
+ * @param flattenForm When true, `form.flatten()` after filling — the values are
+ *                    burned in and the document is no longer a fillable form.
  */
 export async function bakeAnnotations(
 	originalBytes: Uint8Array,
-	annots: readonly Annotation[]
+	annots: readonly Annotation[],
+	formValues?: Record<string, FormFieldValue>,
+	flattenForm = false
 ): Promise<Uint8Array> {
 	const doc = await PDFDocument.load(originalBytes);
+
+	if (formValues) {
+		applyFormValues(doc, formValues);
+		// Regenerate appearance streams so the written values are visible when the
+		// saved PDF is reopened in any viewer, even without flattening.
+		try {
+			doc.getForm().updateFieldAppearances();
+		} catch {
+			// A font/encoding hiccup on appearance generation must not fail the save;
+			// the values are still stored in the field dictionaries.
+		}
+	}
+
 	const pages = doc.getPages();
 
 	// Embed each standard font at most once, lazily.
@@ -152,6 +179,15 @@ export async function bakeAnnotations(
 		else if (ann.type === 'symbol') drawSymbolAnnotation(page, ann);
 		else if (ann.type === 'signature')
 			drawSignatureAnnotation(page, await embedPng(ann.src), ann);
+	}
+
+	if (flattenForm) {
+		try {
+			doc.getForm().flatten();
+		} catch {
+			// If flattening fails (unusual form constructs), fall back to a filled
+			// but still-interactive form rather than losing the document.
+		}
 	}
 
 	return doc.save();

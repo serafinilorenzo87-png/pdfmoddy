@@ -13,6 +13,8 @@
 	import type { LoadedPdf } from './viewer';
 	import { annotations, type Annotation } from './annotations.svelte';
 	import { signatures } from './signatures.svelte';
+	import { formFields } from './formfields.svelte';
+	import type { FormFieldWidget } from './forms';
 	import { ptToPx, pxToPt, ptLenToPx, pxLenToPt } from './coords';
 	import { fontDef } from './fonts';
 	import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
@@ -58,6 +60,37 @@
 
 	const pageAnnots = $derived(annotations.forPage(pageIndex));
 	const placing = $derived(annotations.tool !== 'none');
+	const pageFields = $derived(formFields.forPage(pageIndex));
+
+	// ── Native AcroForm fields ────────────────────────────────────────────────
+	// Screen box for a widget: its rect is bottom-left (x, y) + size in PDF
+	// points; the DOM needs the TOP-left pixel, so project (x, y + height)
+	// through the one canonical conversion (handles the Y-flip).
+	function fieldStyle(w: FormFieldWidget): string {
+		if (!viewport) return 'display:none';
+		const { xPx, yPx } = ptToPx(viewport, w.rect.x, w.rect.y + w.rect.height);
+		const wpx = ptLenToPx(viewport, w.rect.width);
+		const hpx = ptLenToPx(viewport, w.rect.height);
+		return `left:${xPx}px; top:${yPx}px; width:${wpx}px; height:${hpx}px;`;
+	}
+
+	/** A readable font size for a field input, scaled to the widget's height. */
+	function fieldFontPx(w: FormFieldWidget): number {
+		if (!viewport) return 12;
+		const hpx = ptLenToPx(viewport, w.rect.height);
+		return Math.max(8, Math.min(hpx * 0.6, ptLenToPx(viewport, 12)));
+	}
+
+	/** String view of a field value (text / choice). */
+	function strVal(fieldName: string): string {
+		const v = formFields.values[fieldName];
+		return typeof v === 'string' ? v : '';
+	}
+
+	/** Boolean view of a field value (checkbox). */
+	function boolVal(fieldName: string): boolean {
+		return formFields.values[fieldName] === true;
+	}
 
 	// ── Placement: a click on the overlay drops a new text box ────────────────
 	// The tool MODE stays armed afterwards so several boxes can be dropped in a
@@ -196,6 +229,88 @@
 
 <div class="relative my-4 inline-block">
 	<canvas bind:this={canvasEl} class="block rounded-sm bg-white shadow-md"></canvas>
+
+	<!-- Native AcroForm fields layer: real HTML inputs positioned over the PDF's
+	     existing form widgets. The container is click-through (pointer-events
+	     none); only the inputs themselves are interactive, so empty areas still
+	     reach the overlay below. Sits UNDER the overlay layer in the DOM, so when
+	     a placement tool is armed the overlay captures clicks (you place marks);
+	     when it is not, the overlay is click-through and these fields are live. -->
+	{#if viewport && pageFields.length > 0}
+		<div class="absolute inset-0" style:pointer-events="none">
+			{#each pageFields as w (w.id)}
+				{@const fs = fieldFontPx(w)}
+				<div class="absolute" style={fieldStyle(w)} style:pointer-events="auto">
+					{#if w.type === 'text'}
+						{#if w.multiline}
+							<textarea
+								aria-label={w.fieldName}
+								title={w.fieldName}
+								disabled={w.readOnly}
+								maxlength={w.maxLength}
+								value={strVal(w.fieldName)}
+								oninput={(e) => formFields.setValue(w.fieldName, e.currentTarget.value)}
+								spellcheck="false"
+								class="h-full w-full resize-none rounded-sm border border-brand/50 bg-brand/5 px-0.5 leading-tight text-ink outline-none focus:border-brand focus:bg-white focus:ring-1 focus:ring-brand disabled:opacity-60"
+								style:font-size="{fs}px"
+								style:line-height="{fs * 1.15}px"
+							></textarea>
+						{:else}
+							<input
+								type="text"
+								aria-label={w.fieldName}
+								title={w.fieldName}
+								disabled={w.readOnly}
+								maxlength={w.maxLength}
+								value={strVal(w.fieldName)}
+								oninput={(e) => formFields.setValue(w.fieldName, e.currentTarget.value)}
+								spellcheck="false"
+								class="h-full w-full rounded-sm border border-brand/50 bg-brand/5 px-0.5 text-ink outline-none focus:border-brand focus:bg-white focus:ring-1 focus:ring-brand disabled:opacity-60"
+								style:font-size="{fs}px"
+							/>
+						{/if}
+					{:else if w.type === 'checkbox'}
+						<input
+							type="checkbox"
+							aria-label={w.fieldName}
+							title={w.fieldName}
+							disabled={w.readOnly}
+							checked={boolVal(w.fieldName)}
+							onchange={(e) => formFields.setValue(w.fieldName, e.currentTarget.checked)}
+							class="h-full w-full cursor-pointer accent-brand"
+						/>
+					{:else if w.type === 'radio'}
+						<input
+							type="radio"
+							name="pdfmoddy-{w.fieldName}"
+							aria-label="{w.fieldName}: {w.optionValue}"
+							title="{w.fieldName}: {w.optionValue}"
+							disabled={w.readOnly}
+							checked={strVal(w.fieldName) === w.optionValue}
+							onchange={() => formFields.setValue(w.fieldName, w.optionValue ?? '')}
+							class="h-full w-full cursor-pointer accent-brand"
+						/>
+					{:else}
+						<!-- dropdown / option list → single-select -->
+						<select
+							aria-label={w.fieldName}
+							title={w.fieldName}
+							disabled={w.readOnly}
+							value={strVal(w.fieldName)}
+							onchange={(e) => formFields.setValue(w.fieldName, e.currentTarget.value)}
+							class="h-full w-full rounded-sm border border-brand/50 bg-brand/5 px-0.5 text-ink outline-none focus:border-brand focus:bg-white focus:ring-1 focus:ring-brand disabled:opacity-60"
+							style:font-size="{fs}px"
+						>
+							<option value=""></option>
+							{#each w.options ?? [] as opt (opt)}
+								<option value={opt}>{opt}</option>
+							{/each}
+						</select>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	{/if}
 
 	<!-- Overlay layer: inert by default; armed only when placing a new box.
 	     It's a canvas-like placement surface (click to drop a box), not a

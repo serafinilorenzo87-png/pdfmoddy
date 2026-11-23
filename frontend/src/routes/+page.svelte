@@ -3,6 +3,8 @@
 	import { bakeAnnotations } from '$lib/pdf/bake';
 	import { annotations } from '$lib/pdf/annotations.svelte';
 	import { signatures } from '$lib/pdf/signatures.svelte';
+	import { formFields } from '$lib/pdf/formfields.svelte';
+	import { detectFormFields } from '$lib/pdf/forms';
 	import { FONTS } from '$lib/pdf/fonts';
 	import PdfPage from '$lib/pdf/PdfPage.svelte';
 	import SignatureModal from '$lib/pdf/SignatureModal.svelte';
@@ -35,8 +37,17 @@
 			loading = true;
 			const doc = await loadPdfDocument(picked.path);
 			annotations.clear(); // fresh document, fresh overlay
+			formFields.clear();
 			loaded = doc;
 			fileName = picked.name;
+			// Detect existing AcroForm fields so they become directly fillable.
+			// A malformed form must not block opening the document for overlay use.
+			try {
+				const { widgets, values } = await detectFormFields(doc.bytes);
+				formFields.load(widgets, values);
+			} catch {
+				formFields.clear();
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -83,7 +94,12 @@
 		status = '';
 		try {
 			saving = true;
-			const outBytes = await bakeAnnotations(loaded.bytes, annotations.items);
+			const outBytes = await bakeAnnotations(
+				loaded.bytes,
+				annotations.items,
+				formFields.hasForm ? formFields.values : undefined,
+				formFields.hasForm && formFields.flatten
+			);
 			const suggested = fileName.replace(/\.pdf$/i, '') + '-compilato.pdf';
 			const ok = await savePdfBytes(outBytes, suggested);
 			status = ok ? 'PDF salvato.' : '';
@@ -165,6 +181,19 @@
 		>
 			{saving ? 'Salvo…' : 'Salva PDF'}
 		</button>
+
+		{#if formFields.hasForm}
+			<div
+				class="flex items-center gap-2 rounded bg-white/15 px-2 py-1 text-xs font-medium"
+				title="Questo PDF ha campi modulo compilabili direttamente"
+			>
+				<span>📝 Modulo rilevato: {formFields.fieldCount} {formFields.fieldCount === 1 ? 'campo' : 'campi'}</span>
+				<label class="flex items-center gap-1" title="I valori diventano contenuto fisso non più modificabile">
+					<input type="checkbox" bind:checked={formFields.flatten} class="accent-brand" />
+					Appiattisci al salvataggio
+				</label>
+			</div>
+		{/if}
 
 		{#if showTextStyle}
 			{@const style = annotations.activeTextStyle}
