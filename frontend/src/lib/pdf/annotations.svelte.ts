@@ -105,7 +105,7 @@ class AnnotationStore {
 	textDefaults = $state<TextStyle>({ fontSize: 14, font: DEFAULT_FONT, color: '#1A1A1A' });
 
 	/** Style applied to the next symbol stamp, synced with the selection. */
-	symbolDefaults = $state<SymbolStyle>({ symbol: 'check', color: '#D32F2F' });
+	symbolDefaults = $state<SymbolStyle>({ symbol: 'check', color: '#000000' });
 
 	/** Annotations belonging to one page (0-based), in insertion order. */
 	forPage(pageIndex: number): Annotation[] {
