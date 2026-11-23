@@ -17,7 +17,7 @@
 import { DEFAULT_FONT, type FontKey } from './fonts';
 import type { SymbolKind } from './symbols';
 
-export type AnnotationType = 'text' | 'symbol';
+export type AnnotationType = 'text' | 'symbol' | 'signature';
 
 export interface TextAnnotation {
 	id: string;
@@ -57,7 +57,29 @@ export interface SymbolAnnotation {
 	color: string;
 }
 
-export type Annotation = TextAnnotation | SymbolAnnotation;
+/**
+ * A placed signature: a transparent PNG (hand-drawn, or a cursive name
+ * rasterized to the same format) stamped as an image. Reuses the shared box
+ * geometry (xPt/yPt/wPt/hPt). `aspect` (= natural width / height) is kept so
+ * resizing stays proportional and the baked `drawImage` matches the preview.
+ */
+export interface SignatureAnnotation {
+	id: string;
+	pageIndex: number;
+	type: 'signature';
+	xPt: number;
+	yPt: number;
+	wPt: number;
+	hPt: number;
+	/** PNG data URL (transparent background, black stroke). */
+	src: string;
+	/** Natural aspect ratio (width / height) — resizing preserves it. */
+	aspect: number;
+	/** Id of the library signature this came from (for reference only). */
+	libraryId?: string;
+}
+
+export type Annotation = TextAnnotation | SymbolAnnotation | SignatureAnnotation;
 
 /** The styling carried by a text box — shared by the toolbar and new boxes. */
 export interface TextStyle {
@@ -77,7 +99,7 @@ export interface SymbolStyle {
  * Generic tool-mode: every placeable kind is a value here, and M3 signatures
  * will add `'signature'` without changing the mode machinery.
  */
-export type Tool = 'none' | 'text' | 'symbol';
+export type Tool = 'none' | 'text' | 'symbol' | 'signature';
 
 let idCounter = 0;
 function nextId(): string {
@@ -161,6 +183,13 @@ class AnnotationStore {
 	addSymbol(init: Omit<SymbolAnnotation, 'id' | 'type'>): string {
 		const id = nextId();
 		this.items.push({ id, type: 'symbol', ...init });
+		return id;
+	}
+
+	/** Add a signature image stamp; returns its id. */
+	addSignature(init: Omit<SignatureAnnotation, 'id' | 'type'>): string {
+		const id = nextId();
+		this.items.push({ id, type: 'signature', ...init });
 		return id;
 	}
 

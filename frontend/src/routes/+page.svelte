@@ -2,8 +2,10 @@
 	import { openPdfDialog, loadPdfDocument, savePdfBytes, type LoadedPdf } from '$lib/pdf/viewer';
 	import { bakeAnnotations } from '$lib/pdf/bake';
 	import { annotations } from '$lib/pdf/annotations.svelte';
+	import { signatures } from '$lib/pdf/signatures.svelte';
 	import { FONTS } from '$lib/pdf/fonts';
 	import PdfPage from '$lib/pdf/PdfPage.svelte';
+	import SignatureModal from '$lib/pdf/SignatureModal.svelte';
 
 	let loaded = $state<LoadedPdf | null>(null);
 	let fileName = $state('');
@@ -11,6 +13,7 @@
 	let saving = $state(false);
 	let error = $state('');
 	let status = $state('');
+	let sigModalOpen = $state(false);
 	const scale = 1.5;
 
 	const selected = $derived(
@@ -46,6 +49,23 @@
 		annotations.tool = annotations.tool === 'text' ? 'none' : 'text';
 	}
 
+	function toggleSignature() {
+		if (!loaded) return;
+		if (annotations.tool === 'signature') {
+			annotations.tool = 'none';
+			return;
+		}
+		annotations.tool = 'signature';
+		// No signatures yet → jump straight to creating one.
+		if (signatures.items.length === 0) sigModalOpen = true;
+	}
+
+	function onSignatureSaved(sig: { label: string; pngDataUrl: string; aspect: number }) {
+		signatures.add(sig); // also arms it (sets selectedId)
+		sigModalOpen = false;
+		annotations.tool = 'signature';
+	}
+
 	function pickSymbol(sym: 'check' | 'cross') {
 		if (!loaded) return;
 		// Click the already-active variant to leave the mode.
@@ -77,7 +97,8 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') annotations.tool = 'none';
+		// The modal owns Escape while it's open (closes the dialog, not the tool).
+		if (e.key === 'Escape' && !sigModalOpen) annotations.tool = 'none';
 	}}
 />
 
@@ -125,6 +146,17 @@
 				{symbolActive('cross') ? '✕ Fine' : '✕ Croce'}
 			</button>
 		</div>
+
+		<button
+			onclick={toggleSignature}
+			aria-pressed={annotations.tool === 'signature'}
+			title="Firma — scegli una firma dalla libreria e clicca sul PDF"
+			class={annotations.tool === 'signature'
+				? 'rounded bg-white px-3 py-1.5 text-sm font-semibold text-brand transition-colors'
+				: 'rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
+		>
+			{annotations.tool === 'signature' ? '✓ Fine firma' : '✒ Firma'}
+		</button>
 
 		<button
 			onclick={savePdf}
@@ -186,6 +218,50 @@
 				</label>
 			</div>
 		{/if}
+
+		{#if annotations.tool === 'signature'}
+			<div class="basis-full"></div>
+			<div class="flex w-full flex-wrap items-center gap-2 rounded bg-white/10 px-2 py-2 text-xs">
+				<span class="font-medium text-white/90">
+					{signatures.items.length === 0
+						? 'Nessuna firma salvata.'
+						: 'Scegli una firma, poi clicca sul PDF:'}
+				</span>
+				{#each signatures.items as sig (sig.id)}
+					{@const active = signatures.selectedId === sig.id}
+					<div
+						class="group relative flex items-center gap-1 rounded border bg-white p-1"
+						class:border-brand-dark={active}
+						class:border-white={!active}
+					>
+						<button
+							type="button"
+							title={sig.label}
+							aria-pressed={active}
+							onclick={() => (signatures.selectedId = sig.id)}
+							class="flex items-center gap-1.5"
+						>
+							<img src={sig.pngDataUrl} alt={sig.label} class="h-7 max-w-24 object-contain" />
+							<span class="max-w-28 truncate text-ink">{sig.label}</span>
+						</button>
+						<button
+							type="button"
+							aria-label="Elimina firma"
+							title="Elimina dalla libreria"
+							onclick={() => signatures.remove(sig.id)}
+							class="rounded px-1 text-ink-muted hover:bg-brand/10 hover:text-brand">✕</button
+						>
+					</div>
+				{/each}
+				<button
+					type="button"
+					onclick={() => (sigModalOpen = true)}
+					class="rounded bg-white px-2.5 py-1 font-medium text-brand hover:bg-white/90"
+				>
+					+ Nuova firma
+				</button>
+			</div>
+		{/if}
 	{/if}
 
 	{#if fileName}
@@ -225,3 +301,5 @@
 		</div>
 	{/if}
 </main>
+
+<SignatureModal open={sigModalOpen} onsave={onSignatureSaved} onclose={() => (sigModalOpen = false)} />

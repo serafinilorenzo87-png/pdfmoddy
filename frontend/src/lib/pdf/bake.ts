@@ -14,8 +14,13 @@
  * adjustment is text baseline: `drawText`'s `y` is the glyph baseline, while
  * `yPt` is the box's top edge — so we drop the baseline by the font ascent.
  */
-import { PDFDocument, rgb, LineCapStyle, type PDFFont, type PDFPage } from 'pdf-lib';
-import type { Annotation, SymbolAnnotation, TextAnnotation } from './annotations.svelte';
+import { PDFDocument, rgb, LineCapStyle, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
+import type {
+	Annotation,
+	SignatureAnnotation,
+	SymbolAnnotation,
+	TextAnnotation
+} from './annotations.svelte';
 import { fontDef } from './fonts';
 import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
 
@@ -86,6 +91,25 @@ function drawSymbolAnnotation(page: PDFPage, ann: SymbolAnnotation): void {
 	}
 }
 
+/** Decode a `data:image/png;base64,...` URL to raw bytes for pdf-lib. */
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+	const comma = dataUrl.indexOf(',');
+	const b64 = comma === -1 ? dataUrl : dataUrl.slice(comma + 1);
+	const bin = atob(b64);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes;
+}
+
+function drawSignatureAnnotation(page: PDFPage, png: PDFImage, ann: SignatureAnnotation): void {
+	// Box edges in PDF space (origin bottom-left, y up): yPt is the TOP edge, so
+	// the image's bottom-left anchor sits hPt below it. Same flip as the symbol
+	// path, so the baked image matches the on-screen overlay exactly.
+	const left = ann.xPt;
+	const bottom = ann.yPt - ann.hPt;
+	page.drawImage(png, { x: left, y: bottom, width: ann.wPt, height: ann.hPt });
+}
+
 /**
  * Return a NEW PDF byte array: the original document with every annotation
  * stamped onto its page. `originalBytes` is not mutated.
@@ -109,11 +133,25 @@ export async function bakeAnnotations(
 		return f;
 	};
 
+	// Embed each unique signature PNG at most once (same data URL reused across
+	// placements → one embedded image).
+	const pngCache = new Map<string, PDFImage>();
+	const embedPng = async (dataUrl: string): Promise<PDFImage> => {
+		let img = pngCache.get(dataUrl);
+		if (!img) {
+			img = await doc.embedPng(dataUrlToBytes(dataUrl));
+			pngCache.set(dataUrl, img);
+		}
+		return img;
+	};
+
 	for (const ann of annots) {
 		const page = pages[ann.pageIndex];
 		if (!page) continue;
 		if (ann.type === 'text') drawTextAnnotation(page, await embed(ann), ann);
 		else if (ann.type === 'symbol') drawSymbolAnnotation(page, ann);
+		else if (ann.type === 'signature')
+			drawSignatureAnnotation(page, await embedPng(ann.src), ann);
 	}
 
 	return doc.save();

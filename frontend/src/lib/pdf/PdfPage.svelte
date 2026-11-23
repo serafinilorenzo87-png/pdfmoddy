@@ -12,6 +12,7 @@
 	import type { PDFPageProxy, PageViewport } from 'pdfjs-dist';
 	import type { LoadedPdf } from './viewer';
 	import { annotations, type Annotation } from './annotations.svelte';
+	import { signatures } from './signatures.svelte';
 	import { ptToPx, pxToPt, ptLenToPx, pxLenToPt } from './coords';
 	import { fontDef } from './fonts';
 	import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
@@ -105,6 +106,27 @@
 				color: style.color
 			});
 			annotations.selectedId = id;
+		} else if (annotations.tool === 'signature') {
+			// Drop the armed library signature, centered on the click, at a default
+			// width with its natural aspect ratio preserved.
+			const sig = signatures.get(signatures.selectedId);
+			if (!sig) return;
+			const wPt = 160;
+			const hPt = wPt / sig.aspect;
+			const halfW = ptLenToPx(viewport, wPt) / 2;
+			const halfH = ptLenToPx(viewport, hPt) / 2;
+			const tl = pxToPt(viewport, e.clientX - rect.left - halfW, e.clientY - rect.top - halfH);
+			const id = annotations.addSignature({
+				pageIndex,
+				xPt: tl.xPt,
+				yPt: tl.yPt,
+				wPt,
+				hPt,
+				src: sig.pngDataUrl,
+				aspect: sig.aspect,
+				libraryId: sig.id
+			});
+			annotations.selectedId = id;
 		}
 	}
 
@@ -154,8 +176,15 @@
 		if (!resize || resize.id !== a.id || !viewport) return;
 		const dwPt = pxLenToPt(viewport, e.clientX - resize.startX);
 		const dhPt = pxLenToPt(viewport, e.clientY - resize.startY);
-		a.wPt = Math.max(24, resize.w0 + dwPt);
-		a.hPt = Math.max(16, resize.h0 + dhPt);
+		if (a.type === 'signature') {
+			// Keep the image proportional: width drives, height follows the aspect.
+			const wPt = Math.max(24, resize.w0 + dwPt);
+			a.wPt = wPt;
+			a.hPt = wPt / a.aspect;
+		} else {
+			a.wPt = Math.max(24, resize.w0 + dwPt);
+			a.hPt = Math.max(16, resize.h0 + dhPt);
+		}
 	}
 	function endResize(e: PointerEvent, a: Annotation) {
 		if (resize?.id === a.id) {
@@ -251,6 +280,19 @@
 								/>
 						{/each}
 					</svg>
+				{:else if a.type === 'signature'}
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<img
+						src={a.src}
+						alt="Firma"
+						draggable="false"
+						class="h-full w-full select-none rounded-sm border"
+						class:border-brand={selected}
+						class:border-dashed={!selected}
+						class:border-transparent={!selected}
+						style:object-fit="fill"
+						onpointerdown={() => (annotations.selectedId = a.id)}
+					/>
 				{/if}
 
 				<!-- resize handle (bottom-right) -->
