@@ -1,0 +1,8 @@
+# Build output
+target/
+
+# Tauri-generated code (regenerated each build from tauri.conf.json + capabilities/)
+gen/
+
+# Cargo.lock IS committed: PdfModdy is an application, the lock file pins the
+# exact crate versions used at build time (Tauri has ~440 transitive deps).

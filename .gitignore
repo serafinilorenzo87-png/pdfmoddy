@@ -1,0 +1,41 @@
+# ===== PdfModdy — root .gitignore =====
+# Local personal-use desktop app for Windows.
+
+# Node / frontend
+node_modules/
+.svelte-kit/
+build/
+dist/
+*.log
+npm-debug.log*
+
+# Rust / Tauri
+target/
+src-tauri/gen/
+src-tauri/target/
+# src-tauri/Cargo.lock IS committed (see src-tauri/.gitignore)
+
+# Keys & certificates — never commit
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Build artifacts
+*.msi

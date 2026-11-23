@@ -1,0 +1,32 @@
+[package]
+name = "pdfmoddy"
+version = "0.1.0"
+description = "PdfModdy — local PDF signing & form-filling desktop app"
+authors = ["Lorenzo Serafini"]
+edition = "2021"
+rust-version = "1.77"
+
+# Tauri 2 layout: a thin main.rs delegates to a library crate.
+[lib]
+name = "pdfmoddy_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Binary file bytes cross the Tauri IPC bridge as base64 strings.
+base64 = "0.22"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

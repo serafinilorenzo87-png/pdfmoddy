@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PdfModdy",
+  "version": "0.1.0",
+  "identifier": "com.pdfmoddy.app",
+  "build": {
+    "frontendDist": "../frontend/build",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PdfModdy",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true,
+        "backgroundColor": "#F4F4F5"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "shortDescription": "Local PDF signing & form filling",
+    "longDescription": "PdfModdy — firma e compila documenti PDF in locale su Windows."
+  }
+}
