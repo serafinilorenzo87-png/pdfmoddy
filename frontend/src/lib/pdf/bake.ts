@@ -14,8 +14,9 @@
  * adjustment is text baseline: `drawText`'s `y` is the glyph baseline, while
  * `yPt` is the box's top edge — so we drop the baseline by the font ascent.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
+import { PDFDocument, rgb, type PDFFont } from 'pdf-lib';
 import type { Annotation } from './annotations.svelte';
+import { fontDef } from './fonts';
 
 /** Fraction of em used as line advance when a text box holds multiple lines. */
 const LINE_HEIGHT_FACTOR = 1.15;
@@ -73,12 +74,23 @@ export async function bakeAnnotations(
 ): Promise<Uint8Array> {
 	const doc = await PDFDocument.load(originalBytes);
 	const pages = doc.getPages();
-	const font = await doc.embedFont(StandardFonts.Helvetica);
+
+	// Embed each standard font at most once, lazily.
+	const fontCache = new Map<string, PDFFont>();
+	const embed = async (ann: Annotation): Promise<PDFFont> => {
+		const std = fontDef(ann.font).standard;
+		let f = fontCache.get(std);
+		if (!f) {
+			f = await doc.embedFont(std);
+			fontCache.set(std, f);
+		}
+		return f;
+	};
 
 	for (const ann of annots) {
 		const page = pages[ann.pageIndex];
 		if (!page) continue;
-		if (ann.type === 'text') drawTextAnnotation(page, font, ann);
+		if (ann.type === 'text') drawTextAnnotation(page, await embed(ann), ann);
 	}
 
 	return doc.save();

@@ -14,6 +14,7 @@
  * Storing points — not pixels — keeps positions stable across zoom levels.
  * See `coords.ts` for the pixel⇄point conversions.
  */
+import { DEFAULT_FONT, type FontKey } from './fonts';
 
 export type AnnotationType = 'text';
 
@@ -32,11 +33,20 @@ export interface TextAnnotation {
 	text: string;
 	/** Font size in PDF points. */
 	fontSize: number;
+	/** Standard-font key (see fonts.ts) — used for both preview and baking. */
+	font: FontKey;
 	/** Hex color, e.g. `#1A1A1A`. */
 	color: string;
 }
 
 export type Annotation = TextAnnotation;
+
+/** The styling carried by a text box — shared by the toolbar and new boxes. */
+export interface TextStyle {
+	fontSize: number;
+	font: FontKey;
+	color: string;
+}
 
 /** Which placement tool is armed (a click on a page then drops an annotation). */
 export type Tool = 'none' | 'text';
@@ -52,12 +62,44 @@ class AnnotationStore {
 	items = $state<Annotation[]>([]);
 	/** Currently selected annotation id, or null. */
 	selectedId = $state<string | null>(null);
-	/** Armed placement tool. */
+	/**
+	 * Armed placement tool. This is a persistent MODE: it stays set across
+	 * placements and is cleared only by the user (toggling the button / Escape),
+	 * never automatically after a drop. M3 signatures reuse the same mode switch.
+	 */
 	tool = $state<Tool>('none');
+
+	/**
+	 * Style applied to the NEXT text box, and the live style of the selected box
+	 * (kept in sync via {@link setTextStyle}). Lets the user pick font/size/color
+	 * before placing and have it persist to subsequent boxes.
+	 */
+	textDefaults = $state<TextStyle>({ fontSize: 14, font: DEFAULT_FONT, color: '#1A1A1A' });
 
 	/** Annotations belonging to one page (0-based), in insertion order. */
 	forPage(pageIndex: number): Annotation[] {
 		return this.items.filter((a) => a.pageIndex === pageIndex);
+	}
+
+	/**
+	 * Apply a style change from the toolbar: updates the selected text box (if
+	 * any) AND the defaults, so the next box inherits the same look.
+	 */
+	setTextStyle(patch: Partial<TextStyle>): void {
+		if (this.selectedId) {
+			const a = this.get(this.selectedId);
+			if (a && a.type === 'text') Object.assign(a, patch);
+		}
+		Object.assign(this.textDefaults, patch);
+	}
+
+	/** The style the toolbar should show/edit: the selection's, else the defaults. */
+	get activeTextStyle(): TextStyle {
+		if (this.selectedId) {
+			const a = this.get(this.selectedId);
+			if (a && a.type === 'text') return a;
+		}
+		return this.textDefaults;
 	}
 
 	/** Add a text annotation; returns its id. Defaults fill in the boring bits. */

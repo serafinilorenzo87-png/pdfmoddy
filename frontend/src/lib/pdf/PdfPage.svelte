@@ -13,6 +13,7 @@
 	import type { LoadedPdf } from './viewer';
 	import { annotations, type TextAnnotation } from './annotations.svelte';
 	import { ptToPx, pxToPt, ptLenToPx, pxLenToPt } from './coords';
+	import { fontDef } from './fonts';
 
 	let {
 		loaded,
@@ -57,10 +58,13 @@
 	const placing = $derived(annotations.tool === 'text');
 
 	// ── Placement: a click on the overlay drops a new text box ────────────────
+	// The tool MODE stays armed afterwards so several boxes can be dropped in a
+	// row; it's cleared only by the toolbar button / Escape (see +page.svelte).
 	function onOverlayPointerDown(e: PointerEvent) {
 		if (!placing || !viewport) return;
 		const rect = overlayEl.getBoundingClientRect();
 		const { xPt, yPt } = pxToPt(viewport, e.clientX - rect.left, e.clientY - rect.top);
+		const style = annotations.textDefaults;
 		const id = annotations.addText({
 			pageIndex,
 			xPt,
@@ -68,10 +72,10 @@
 			wPt: 180,
 			hPt: 26,
 			text: '',
-			fontSize: 14,
-			color: '#1A1A1A'
+			fontSize: style.fontSize,
+			font: style.font,
+			color: style.color
 		});
-		annotations.tool = 'none';
 		annotations.selectedId = id;
 		tick().then(() => {
 			overlayEl
@@ -154,6 +158,7 @@
 		{#each pageAnnots as a (a.id)}
 			{@const selected = annotations.selectedId === a.id}
 			{@const fontPx = ptLenToPx(viewport!, a.fontSize)}
+			{@const css = fontDef(a.font).css}
 			<div
 				class="group absolute"
 				class:z-10={selected}
@@ -192,6 +197,9 @@
 					class:border-brand-light={!selected}
 					style:font-size="{fontPx}px"
 					style:line-height="{fontPx * 1.15}px"
+					style:font-family={css.family}
+					style:font-weight={css.weight}
+					style:font-style={css.style}
 					style:color={a.color}
 					onfocus={() => (annotations.selectedId = a.id)}
 				></textarea>

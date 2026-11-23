@@ -2,6 +2,7 @@
 	import { openPdfDialog, loadPdfDocument, savePdfBytes, type LoadedPdf } from '$lib/pdf/viewer';
 	import { bakeAnnotations } from '$lib/pdf/bake';
 	import { annotations } from '$lib/pdf/annotations.svelte';
+	import { FONTS } from '$lib/pdf/fonts';
 	import PdfPage from '$lib/pdf/PdfPage.svelte';
 
 	let loaded = $state<LoadedPdf | null>(null);
@@ -15,6 +16,8 @@
 	const selected = $derived(
 		annotations.selectedId ? annotations.get(annotations.selectedId) : undefined
 	);
+	// Show the text style toolbar while placing OR when a text box is selected.
+	const showTextStyle = $derived(annotations.tool === 'text' || selected?.type === 'text');
 
 	async function openPdf() {
 		error = '';
@@ -82,7 +85,7 @@
 				? 'rounded bg-white px-3 py-1.5 text-sm font-medium text-brand transition-colors'
 				: 'rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
 		>
-			{annotations.tool === 'text' ? 'Clicca sulla pagina…' : '+ Aggiungi testo'}
+			{annotations.tool === 'text' ? '✓ Fine testo' : '+ Aggiungi testo'}
 		</button>
 
 		<button
@@ -93,21 +96,40 @@
 			{saving ? 'Salvo…' : 'Salva PDF'}
 		</button>
 
-		{#if selected}
+		{#if showTextStyle}
+			{@const style = annotations.activeTextStyle}
 			<div class="ml-1 flex items-center gap-2 rounded bg-white/10 px-2 py-1 text-xs">
+				<label class="flex items-center gap-1">
+					Font
+					<select
+						value={style.font}
+						onchange={(e) => annotations.setTextStyle({ font: e.currentTarget.value as typeof style.font })}
+						class="rounded bg-white px-1 py-0.5 text-ink"
+					>
+						{#each FONTS as f (f.key)}
+							<option value={f.key}>{f.label}</option>
+						{/each}
+					</select>
+				</label>
 				<label class="flex items-center gap-1">
 					Corpo
 					<input
 						type="number"
 						min="6"
 						max="96"
-						bind:value={selected.fontSize}
+						value={style.fontSize}
+						oninput={(e) => annotations.setTextStyle({ fontSize: Number(e.currentTarget.value) || style.fontSize })}
 						class="w-14 rounded bg-white px-1 py-0.5 text-ink"
 					/>
 				</label>
 				<label class="flex items-center gap-1">
 					Colore
-					<input type="color" bind:value={selected.color} class="h-6 w-7 rounded bg-white" />
+					<input
+						type="color"
+						value={style.color}
+						oninput={(e) => annotations.setTextStyle({ color: e.currentTarget.value })}
+						class="h-6 w-7 rounded bg-white"
+					/>
 				</label>
 			</div>
 		{/if}
