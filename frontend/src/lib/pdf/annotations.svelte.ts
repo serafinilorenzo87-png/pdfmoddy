@@ -15,8 +15,9 @@
  * See `coords.ts` for the pixel⇄point conversions.
  */
 import { DEFAULT_FONT, type FontKey } from './fonts';
+import type { SymbolKind } from './symbols';
 
-export type AnnotationType = 'text';
+export type AnnotationType = 'text' | 'symbol';
 
 export interface TextAnnotation {
 	id: string;
@@ -39,7 +40,24 @@ export interface TextAnnotation {
 	color: string;
 }
 
-export type Annotation = TextAnnotation;
+/**
+ * A checkmark / cross stamp. Reuses the same box geometry (xPt/yPt/wPt/hPt) and
+ * color as text — only the painted content differs. Drawn as vector strokes
+ * (see symbols.ts + bake.ts), so it scales and colors cleanly.
+ */
+export interface SymbolAnnotation {
+	id: string;
+	pageIndex: number;
+	type: 'symbol';
+	xPt: number;
+	yPt: number;
+	wPt: number;
+	hPt: number;
+	symbol: SymbolKind;
+	color: string;
+}
+
+export type Annotation = TextAnnotation | SymbolAnnotation;
 
 /** The styling carried by a text box — shared by the toolbar and new boxes. */
 export interface TextStyle {
@@ -48,8 +66,18 @@ export interface TextStyle {
 	color: string;
 }
 
-/** Which placement tool is armed (a click on a page then drops an annotation). */
-export type Tool = 'none' | 'text';
+/** Styling for a new symbol stamp. */
+export interface SymbolStyle {
+	symbol: SymbolKind;
+	color: string;
+}
+
+/**
+ * Which placement tool is armed (a click on a page then drops an annotation).
+ * Generic tool-mode: every placeable kind is a value here, and M3 signatures
+ * will add `'signature'` without changing the mode machinery.
+ */
+export type Tool = 'none' | 'text' | 'symbol';
 
 let idCounter = 0;
 function nextId(): string {
@@ -75,6 +103,9 @@ class AnnotationStore {
 	 * before placing and have it persist to subsequent boxes.
 	 */
 	textDefaults = $state<TextStyle>({ fontSize: 14, font: DEFAULT_FONT, color: '#1A1A1A' });
+
+	/** Style applied to the next symbol stamp, synced with the selection. */
+	symbolDefaults = $state<SymbolStyle>({ symbol: 'check', color: '#D32F2F' });
 
 	/** Annotations belonging to one page (0-based), in insertion order. */
 	forPage(pageIndex: number): Annotation[] {
@@ -102,10 +133,34 @@ class AnnotationStore {
 		return this.textDefaults;
 	}
 
+	/** Mirror of {@link setTextStyle} for symbol stamps. */
+	setSymbolStyle(patch: Partial<SymbolStyle>): void {
+		if (this.selectedId) {
+			const a = this.get(this.selectedId);
+			if (a && a.type === 'symbol') Object.assign(a, patch);
+		}
+		Object.assign(this.symbolDefaults, patch);
+	}
+
+	get activeSymbolStyle(): SymbolStyle {
+		if (this.selectedId) {
+			const a = this.get(this.selectedId);
+			if (a && a.type === 'symbol') return a;
+		}
+		return this.symbolDefaults;
+	}
+
 	/** Add a text annotation; returns its id. Defaults fill in the boring bits. */
 	addText(init: Omit<TextAnnotation, 'id' | 'type'>): string {
 		const id = nextId();
 		this.items.push({ id, type: 'text', ...init });
+		return id;
+	}
+
+	/** Add a symbol stamp; returns its id. */
+	addSymbol(init: Omit<SymbolAnnotation, 'id' | 'type'>): string {
+		const id = nextId();
+		this.items.push({ id, type: 'symbol', ...init });
 		return id;
 	}
 

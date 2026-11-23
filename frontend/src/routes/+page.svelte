@@ -18,6 +18,10 @@
 	);
 	// Show the text style toolbar while placing OR when a text box is selected.
 	const showTextStyle = $derived(annotations.tool === 'text' || selected?.type === 'text');
+	const showSymbolStyle = $derived(annotations.tool === 'symbol' || selected?.type === 'symbol');
+	function symbolActive(sym: 'check' | 'cross'): boolean {
+		return annotations.tool === 'symbol' && annotations.symbolDefaults.symbol === sym;
+	}
 
 	async function openPdf() {
 		error = '';
@@ -40,6 +44,17 @@
 	function addText() {
 		if (!loaded) return;
 		annotations.tool = annotations.tool === 'text' ? 'none' : 'text';
+	}
+
+	function pickSymbol(sym: 'check' | 'cross') {
+		if (!loaded) return;
+		// Click the already-active variant to leave the mode.
+		if (annotations.tool === 'symbol' && annotations.symbolDefaults.symbol === sym) {
+			annotations.tool = 'none';
+			return;
+		}
+		annotations.setSymbolStyle({ symbol: sym });
+		annotations.tool = 'symbol';
 	}
 
 	async function savePdf() {
@@ -88,6 +103,29 @@
 			{annotations.tool === 'text' ? '✓ Fine testo' : '+ Aggiungi testo'}
 		</button>
 
+		<div class="flex items-center gap-1" role="group" aria-label="Simboli">
+			<button
+				onclick={() => pickSymbol('check')}
+				aria-pressed={symbolActive('check')}
+				title="Posa spunte (V) — clicca sulle caselle"
+				class={symbolActive('check')
+					? 'rounded bg-white px-2.5 py-1.5 text-sm font-semibold text-brand'
+					: 'rounded bg-white/15 px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
+			>
+				{symbolActive('check') ? '✓ Fine' : '✓ Spunta'}
+			</button>
+			<button
+				onclick={() => pickSymbol('cross')}
+				aria-pressed={symbolActive('cross')}
+				title="Posa croci (X) — clicca sulle caselle"
+				class={symbolActive('cross')
+					? 'rounded bg-white px-2.5 py-1.5 text-sm font-semibold text-brand'
+					: 'rounded bg-white/15 px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
+			>
+				{symbolActive('cross') ? '✕ Fine' : '✕ Croce'}
+			</button>
+		</div>
+
 		<button
 			onclick={savePdf}
 			disabled={saving}
@@ -128,6 +166,21 @@
 						type="color"
 						value={style.color}
 						oninput={(e) => annotations.setTextStyle({ color: e.currentTarget.value })}
+						class="h-6 w-7 rounded bg-white"
+					/>
+				</label>
+			</div>
+		{/if}
+
+		{#if showSymbolStyle}
+			{@const sym = annotations.activeSymbolStyle}
+			<div class="ml-1 flex items-center gap-2 rounded bg-white/10 px-2 py-1 text-xs">
+				<label class="flex items-center gap-1">
+					Colore simbolo
+					<input
+						type="color"
+						value={sym.color}
+						oninput={(e) => annotations.setSymbolStyle({ color: e.currentTarget.value })}
 						class="h-6 w-7 rounded bg-white"
 					/>
 				</label>

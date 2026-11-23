@@ -11,9 +11,10 @@
 	import { tick } from 'svelte';
 	import type { PDFPageProxy, PageViewport } from 'pdfjs-dist';
 	import type { LoadedPdf } from './viewer';
-	import { annotations, type TextAnnotation } from './annotations.svelte';
+	import { annotations, type Annotation } from './annotations.svelte';
 	import { ptToPx, pxToPt, ptLenToPx, pxLenToPt } from './coords';
 	import { fontDef } from './fonts';
+	import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
 
 	let {
 		loaded,
@@ -55,7 +56,7 @@
 	});
 
 	const pageAnnots = $derived(annotations.forPage(pageIndex));
-	const placing = $derived(annotations.tool === 'text');
+	const placing = $derived(annotations.tool !== 'none');
 
 	// ── Placement: a click on the overlay drops a new text box ────────────────
 	// The tool MODE stays armed afterwards so several boxes can be dropped in a
@@ -64,27 +65,45 @@
 		if (!placing || !viewport) return;
 		const rect = overlayEl.getBoundingClientRect();
 		const { xPt, yPt } = pxToPt(viewport, e.clientX - rect.left, e.clientY - rect.top);
-		const style = annotations.textDefaults;
-		const id = annotations.addText({
-			pageIndex,
-			xPt,
-			yPt,
-			wPt: 180,
-			hPt: 26,
-			text: '',
-			fontSize: style.fontSize,
-			font: style.font,
-			color: style.color
-		});
-		annotations.selectedId = id;
-		tick().then(() => {
-			overlayEl
-				?.querySelector<HTMLTextAreaElement>(`textarea[data-id="${id}"]`)
-				?.focus();
-		});
+
+		if (annotations.tool === 'text') {
+			const style = annotations.textDefaults;
+			const id = annotations.addText({
+				pageIndex,
+				xPt,
+				yPt,
+				wPt: 180,
+				hPt: 26,
+				text: '',
+				fontSize: style.fontSize,
+				font: style.font,
+				color: style.color
+			});
+			annotations.selectedId = id;
+			tick().then(() => {
+				overlayEl?.querySelector<HTMLTextAreaElement>(`textarea[data-id="${id}"]`)?.focus();
+			});
+		} else if (annotations.tool === 'symbol') {
+			const style = annotations.symbolDefaults;
+			// Drop a square stamp centered on the click, so the cursor marks the
+			// middle of the tick rather than its corner.
+			const sizePt = 22;
+			const half = ptLenToPx(viewport, sizePt) / 2;
+			const centered = pxToPt(viewport, e.clientX - rect.left - half, e.clientY - rect.top - half);
+			const id = annotations.addSymbol({
+				pageIndex,
+				xPt: centered.xPt,
+				yPt: centered.yPt,
+				wPt: sizePt,
+				hPt: sizePt,
+				symbol: style.symbol,
+				color: style.color
+			});
+			annotations.selectedId = id;
+		}
 	}
 
-	function boxStyle(a: TextAnnotation): string {
+	function boxStyle(a: Annotation): string {
 		if (!viewport) return 'display:none';
 		const { xPx, yPx } = ptToPx(viewport, a.xPt, a.yPt);
 		const w = ptLenToPx(viewport, a.wPt);
@@ -94,14 +113,14 @@
 
 	// ── Drag (move) ───────────────────────────────────────────────────────────
 	let drag: { id: string; startX: number; startY: number; x0: number; y0: number } | null = null;
-	function startDrag(e: PointerEvent, a: TextAnnotation) {
+	function startDrag(e: PointerEvent, a: Annotation) {
 		e.preventDefault();
 		e.stopPropagation();
 		annotations.selectedId = a.id;
 		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 		drag = { id: a.id, startX: e.clientX, startY: e.clientY, x0: a.xPt, y0: a.yPt };
 	}
-	function moveDrag(e: PointerEvent, a: TextAnnotation) {
+	function moveDrag(e: PointerEvent, a: Annotation) {
 		if (!drag || drag.id !== a.id || !viewport) return;
 		// Project the original point to px, apply the pixel delta, go back to pt —
 		// so the flip is always applied through the one canonical path.
@@ -110,7 +129,7 @@
 		a.xPt = moved.xPt;
 		a.yPt = moved.yPt;
 	}
-	function endDrag(e: PointerEvent, a: TextAnnotation) {
+	function endDrag(e: PointerEvent, a: Annotation) {
 		if (drag?.id === a.id) {
 			(e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
 			drag = null;
@@ -119,21 +138,21 @@
 
 	// ── Resize (bottom-right handle) ──────────────────────────────────────────
 	let resize: { id: string; startX: number; startY: number; w0: number; h0: number } | null = null;
-	function startResize(e: PointerEvent, a: TextAnnotation) {
+	function startResize(e: PointerEvent, a: Annotation) {
 		e.preventDefault();
 		e.stopPropagation();
 		annotations.selectedId = a.id;
 		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 		resize = { id: a.id, startX: e.clientX, startY: e.clientY, w0: a.wPt, h0: a.hPt };
 	}
-	function moveResize(e: PointerEvent, a: TextAnnotation) {
+	function moveResize(e: PointerEvent, a: Annotation) {
 		if (!resize || resize.id !== a.id || !viewport) return;
 		const dwPt = pxLenToPt(viewport, e.clientX - resize.startX);
 		const dhPt = pxLenToPt(viewport, e.clientY - resize.startY);
 		a.wPt = Math.max(24, resize.w0 + dwPt);
 		a.hPt = Math.max(16, resize.h0 + dhPt);
 	}
-	function endResize(e: PointerEvent, a: TextAnnotation) {
+	function endResize(e: PointerEvent, a: Annotation) {
 		if (resize?.id === a.id) {
 			(e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
 			resize = null;
@@ -157,8 +176,6 @@
 	>
 		{#each pageAnnots as a (a.id)}
 			{@const selected = annotations.selectedId === a.id}
-			{@const fontPx = ptLenToPx(viewport!, a.fontSize)}
-			{@const css = fontDef(a.font).css}
 			<div
 				class="group absolute"
 				class:z-10={selected}
@@ -187,22 +204,49 @@
 					>
 				</div>
 
-				<textarea
-					data-id={a.id}
-					bind:value={a.text}
-					spellcheck="false"
-					class="h-full w-full resize-none overflow-hidden rounded-sm border bg-transparent p-0 leading-tight outline-none"
-					class:border-brand={selected}
-					class:border-dashed={!selected}
-					class:border-brand-light={!selected}
-					style:font-size="{fontPx}px"
-					style:line-height="{fontPx * 1.15}px"
-					style:font-family={css.family}
-					style:font-weight={css.weight}
-					style:font-style={css.style}
-					style:color={a.color}
-					onfocus={() => (annotations.selectedId = a.id)}
-				></textarea>
+				{#if a.type === 'text'}
+					{@const fontPx = ptLenToPx(viewport!, a.fontSize)}
+					{@const css = fontDef(a.font).css}
+					<textarea
+						data-id={a.id}
+						bind:value={a.text}
+						spellcheck="false"
+						class="h-full w-full resize-none overflow-hidden rounded-sm border bg-transparent p-0 leading-tight outline-none"
+						class:border-brand={selected}
+						class:border-dashed={!selected}
+						class:border-brand-light={!selected}
+						style:font-size="{fontPx}px"
+						style:line-height="{fontPx * 1.15}px"
+						style:font-family={css.family}
+						style:font-weight={css.weight}
+						style:font-style={css.style}
+						style:color={a.color}
+						onfocus={() => (annotations.selectedId = a.id)}
+					></textarea>
+				{:else if a.type === 'symbol'}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<svg
+						viewBox="0 0 {SYMBOL_VIEWBOX} {SYMBOL_VIEWBOX}"
+						preserveAspectRatio="none"
+						class="h-full w-full rounded-sm border"
+						class:border-brand={selected}
+						class:border-dashed={!selected}
+						class:border-transparent={!selected}
+						onpointerdown={() => (annotations.selectedId = a.id)}
+					>
+						{#each SYMBOL_STROKES[a.symbol] as poly}
+							<polyline
+								points={poly.map((p) => p.join(',')).join(' ')}
+								fill="none"
+								stroke={a.color}
+								stroke-width="10"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								/>
+						{/each}
+					</svg>
+				{/if}
 
 				<!-- resize handle (bottom-right) -->
 				<div

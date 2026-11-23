@@ -14,9 +14,10 @@
  * adjustment is text baseline: `drawText`'s `y` is the glyph baseline, while
  * `yPt` is the box's top edge — so we drop the baseline by the font ascent.
  */
-import { PDFDocument, rgb, type PDFFont } from 'pdf-lib';
-import type { Annotation } from './annotations.svelte';
+import { PDFDocument, rgb, LineCapStyle, type PDFFont, type PDFPage } from 'pdf-lib';
+import type { Annotation, SymbolAnnotation, TextAnnotation } from './annotations.svelte';
 import { fontDef } from './fonts';
+import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
 
 /** Fraction of em used as line advance when a text box holds multiple lines. */
 const LINE_HEIGHT_FACTOR = 1.15;
@@ -38,11 +39,7 @@ function hexToRgb01(hex: string): { r: number; g: number; b: number } {
 	};
 }
 
-function drawTextAnnotation(
-	page: ReturnType<PDFDocument['getPages']>[number],
-	font: PDFFont,
-	ann: Annotation
-): void {
+function drawTextAnnotation(page: PDFPage, font: PDFFont, ann: TextAnnotation): void {
 	const text = ann.text;
 	if (!text.trim()) return; // empty box leaves no mark
 	const size = ann.fontSize;
@@ -64,6 +61,31 @@ function drawTextAnnotation(
 	}
 }
 
+function drawSymbolAnnotation(page: PDFPage, ann: SymbolAnnotation): void {
+	const { r, g, b } = hexToRgb01(ann.color);
+	const color = rgb(r, g, b);
+	// Box edges in PDF space (origin bottom-left, y up).
+	const left = ann.xPt;
+	const bottom = ann.yPt - ann.hPt;
+	// Stroke ~10% of the box (matches the on-screen SVG), with a sane floor.
+	const thickness = Math.max(0.8, Math.min(ann.wPt, ann.hPt) * 0.1);
+
+	// Map a geometry point (0..VIEWBOX, y DOWN) to a PDF point (y UP) — the same
+	// flip the overlay uses, so the baked mark matches the preview exactly.
+	const toPdf = (sx: number, sy: number) => ({
+		x: left + (sx / SYMBOL_VIEWBOX) * ann.wPt,
+		y: bottom + (1 - sy / SYMBOL_VIEWBOX) * ann.hPt
+	});
+
+	for (const poly of SYMBOL_STROKES[ann.symbol]) {
+		for (let i = 0; i < poly.length - 1; i++) {
+			const start = toPdf(poly[i][0], poly[i][1]);
+			const end = toPdf(poly[i + 1][0], poly[i + 1][1]);
+			page.drawLine({ start, end, thickness, color, lineCap: LineCapStyle.Round });
+		}
+	}
+}
+
 /**
  * Return a NEW PDF byte array: the original document with every annotation
  * stamped onto its page. `originalBytes` is not mutated.
@@ -77,7 +99,7 @@ export async function bakeAnnotations(
 
 	// Embed each standard font at most once, lazily.
 	const fontCache = new Map<string, PDFFont>();
-	const embed = async (ann: Annotation): Promise<PDFFont> => {
+	const embed = async (ann: TextAnnotation): Promise<PDFFont> => {
 		const std = fontDef(ann.font).standard;
 		let f = fontCache.get(std);
 		if (!f) {
@@ -91,6 +113,7 @@ export async function bakeAnnotations(
 		const page = pages[ann.pageIndex];
 		if (!page) continue;
 		if (ann.type === 'text') drawTextAnnotation(page, await embed(ann), ann);
+		else if (ann.type === 'symbol') drawSymbolAnnotation(page, ann);
 	}
 
 	return doc.save();
