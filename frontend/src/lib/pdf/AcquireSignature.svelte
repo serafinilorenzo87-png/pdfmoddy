@@ -24,6 +24,7 @@
 		type ExtractedImage
 	} from './signatureImage';
 	import SignatureEditor from './SignatureEditor.svelte';
+	import { t } from '$lib/i18n/locale.svelte';
 
 	let {
 		onsave,
@@ -71,12 +72,14 @@
 	async function pickImage() {
 		message = '';
 		try {
-			const picked = await openFileDialog([{ name: 'Immagini', extensions: IMAGE_EXTENSIONS }]);
+			const picked = await openFileDialog([
+				{ name: t('acquire.filterImages'), extensions: IMAGE_EXTENSIONS }
+			]);
 			if (!picked) return;
 			busy = true;
 			const mime = imageMimeForName(picked.name);
 			if (!mime) {
-				message = 'Formato immagine non supportato.';
+				message = t('acquire.errImageFormat');
 				return;
 			}
 			const bytes = await readFileBytes(picked.path);
@@ -92,17 +95,19 @@
 	async function pickOffice() {
 		message = '';
 		try {
-			const picked = await openFileDialog([{ name: 'Documenti', extensions: ['docx', 'odt'] }]);
+			const picked = await openFileDialog([
+				{ name: t('acquire.filterDocs'), extensions: ['docx', 'odt'] }
+			]);
 			if (!picked) return;
 			busy = true;
 			const bytes = await readFileBytes(picked.path);
 			officeImages = extractOfficeImages(bytes);
 			staged = null;
 			if (officeImages.length === 0) {
-				message = 'Nessuna immagine incorporata trovata nel documento.';
+				message = t('acquire.errNoEmbedded');
 			}
 		} catch {
-			message = 'Documento non leggibile (serve un .docx o .odt valido).';
+			message = t('acquire.errDocUnreadable');
 		} finally {
 			busy = false;
 		}
@@ -218,58 +223,58 @@
 		}}
 	/>
 {:else if source === null}
-	<p class="mb-3 text-sm text-ink-muted">Da dove vuoi prendere la firma?</p>
+	<p class="mb-3 text-sm text-ink-muted">{t('acquire.sourcePrompt')}</p>
 	<div class="grid grid-cols-3 gap-2">
 		<button
 			type="button"
 			class="rounded border border-brand-light p-3 text-sm font-medium text-ink hover:bg-brand-light/20"
 			onclick={() => (source = 'pdf')}
 		>
-			📄 Da un PDF
-			<span class="mt-1 block text-xs font-normal text-ink-muted">ritaglia dalla pagina</span>
+			{t('acquire.fromPdf')}
+			<span class="mt-1 block text-xs font-normal text-ink-muted">{t('acquire.fromPdfSub')}</span>
 		</button>
 		<button
 			type="button"
 			class="rounded border border-brand-light p-3 text-sm font-medium text-ink hover:bg-brand-light/20"
 			onclick={() => (source = 'image')}
 		>
-			🖼️ Da un'immagine
-			<span class="mt-1 block text-xs font-normal text-ink-muted">PNG / JPG / …</span>
+			{t('acquire.fromImage')}
+			<span class="mt-1 block text-xs font-normal text-ink-muted">{t('acquire.fromImageSub')}</span>
 		</button>
 		<button
 			type="button"
 			class="rounded border border-brand-light p-3 text-sm font-medium text-ink hover:bg-brand-light/20"
 			onclick={() => (source = 'word')}
 		>
-			📝 Da Word / ODT
-			<span class="mt-1 block text-xs font-normal text-ink-muted">immagini incorporate</span>
+			{t('acquire.fromWord')}
+			<span class="mt-1 block text-xs font-normal text-ink-muted">{t('acquire.fromWordSub')}</span>
 		</button>
 	</div>
 {:else}
 	<div class="mb-3 flex items-center gap-2">
 		<button type="button" class="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink" onclick={resetAll}>
-			← Cambia sorgente
+			{t('acquire.changeSource')}
 		</button>
 		{#if source === 'image'}
 			<button
 				type="button"
 				disabled={busy}
 				class="rounded bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-				onclick={pickImage}>Scegli immagine…</button
+				onclick={pickImage}>{t('acquire.chooseImage')}</button
 			>
 		{:else if source === 'word'}
 			<button
 				type="button"
 				disabled={busy}
 				class="rounded bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-				onclick={pickOffice}>Scegli documento…</button
+				onclick={pickOffice}>{t('acquire.chooseDoc')}</button
 			>
 		{:else}
 			<button
 				type="button"
 				disabled={busy}
 				class="rounded bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-				onclick={pickPdf}>Scegli PDF…</button
+				onclick={pickPdf}>{t('acquire.choosePdf')}</button
 			>
 		{/if}
 	</div>
@@ -277,7 +282,7 @@
 	<!-- PDF: render + drag a selection rectangle -->
 	{#if source === 'pdf' && pdf}
 		<div class="mb-2 flex items-center gap-2 text-xs text-ink-muted">
-			<span>Trascina un riquadro attorno alla firma.</span>
+			<span>{t('acquire.dragHint')}</span>
 			{#if pdf.numPages > 1}
 				<span class="ml-auto flex items-center gap-1">
 					<button
@@ -289,7 +294,7 @@
 							sel = null;
 						}}>‹</button
 					>
-					Pag. {pageIndex + 1}/{pdf.numPages}
+					{t('acquire.page', { n: pageIndex + 1, total: pdf.numPages })}
 					<button
 						type="button"
 						class="rounded border border-brand-light px-1.5 hover:bg-brand-light/20 disabled:opacity-40"
@@ -326,7 +331,7 @@
 
 	<!-- Word/ODT: grid of embedded images -->
 	{#if source === 'word' && officeImages.length > 0}
-		<p class="mb-2 text-xs text-ink-muted">Scegli l'immagine della firma:</p>
+		<p class="mb-2 text-xs text-ink-muted">{t('acquire.chooseEmbedded')}</p>
 		<div class="grid max-h-56 grid-cols-4 gap-2 overflow-auto">
 			{#each officeImages as img, i (img.name + i)}
 				<button

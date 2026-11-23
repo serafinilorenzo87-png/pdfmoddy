@@ -17,6 +17,7 @@
 		type Rgb,
 		type BackgroundOptions
 	} from './signatureImage';
+	import { t } from '$lib/i18n/locale.svelte';
 
 	let {
 		source,
@@ -237,10 +238,14 @@
 			strengthen
 		});
 		if (!result) {
-			message = 'Niente da salvare: regola ritaglio, sfondo o intensità.';
+			message = t('editor.errNothing');
 			return;
 		}
-		onsave({ label: label.trim() || 'Firma acquisita', pngDataUrl: result.dataUrl, aspect: result.aspect });
+		onsave({
+			label: label.trim() || t('editor.defaultLabel'),
+			pngDataUrl: result.dataUrl,
+			aspect: result.aspect
+		});
 	}
 
 	const cursorClass = $derived(
@@ -258,7 +263,7 @@
 				class={tool === 'pan'
 					? 'rounded bg-brand px-2 py-0.5 font-medium text-white'
 					: 'rounded border border-brand-light px-2 py-0.5 text-ink hover:bg-brand-light/20'}
-				onclick={() => (tool = 'pan')}>✥ Sposta</button
+				onclick={() => (tool = 'pan')}>{t('editor.pan')}</button
 			>
 			<button
 				type="button"
@@ -266,7 +271,7 @@
 				class={tool === 'crop'
 					? 'rounded bg-brand px-2 py-0.5 font-medium text-white'
 					: 'rounded border border-brand-light px-2 py-0.5 text-ink hover:bg-brand-light/20'}
-				onclick={() => (tool = 'crop')}>▢ Ritaglia</button
+				onclick={() => (tool = 'crop')}>{t('editor.crop')}</button
 			>
 			{#if crop}
 				<button
@@ -275,13 +280,13 @@
 					onclick={() => {
 						crop = null;
 						updatePreview();
-					}}>Azzera ritaglio</button
+					}}>{t('editor.clearCrop')}</button
 				>
 			{/if}
 			<button
 				type="button"
 				class="rounded border border-brand-light px-2 py-0.5 text-ink hover:bg-brand-light/20"
-				onclick={fit}>Adatta</button
+				onclick={fit}>{t('editor.fit')}</button
 			>
 		</div>
 		<div class="relative overflow-hidden rounded border border-brand-light">
@@ -309,7 +314,7 @@
 			{/if}
 		</div>
 		<div class="mt-2 flex items-center gap-2 text-xs text-ink-muted">
-			<span>Zoom</span>
+			<span>{t('editor.zoom')}</span>
 			<input
 				type="range"
 				min={MIN_ZOOM}
@@ -319,34 +324,34 @@
 				oninput={(e) => setZoom(Number(e.currentTarget.value))}
 				class="w-32"
 			/>
-			<span class="text-[11px]">Rotella per zoom, trascina per spostare.</span>
+			<span class="text-[11px]">{t('editor.zoomHint')}</span>
 		</div>
 	</div>
 
 	<!-- Processed preview + controls -->
 	<div class="flex-1">
-		<p class="mb-1 text-xs text-ink-muted">Anteprima firma (sfondo trasparente):</p>
+		<p class="mb-1 text-xs text-ink-muted">{t('editor.previewLabel')}</p>
 		<div
 			class="flex min-h-[120px] items-center justify-center rounded border border-brand-light"
 			style:background-image="repeating-linear-gradient(45deg, #f6f6f6 0 10px, #fff 10px 20px)"
 		>
 			{#if previewUrl}
-				<img src={previewUrl} alt="Anteprima firma" class="max-h-28 max-w-full" />
+				<img src={previewUrl} alt={t('sigmodal.previewAlt')} class="max-h-28 max-w-full" />
 			{:else}
 				<span class="p-4 text-sm text-ink-muted">
-					{previewEmpty ? 'Nessun tratto rilevato' : 'Anteprima'}
+					{previewEmpty ? t('editor.noStroke') : t('sigmodal.preview')}
 				</span>
 			{/if}
 		</div>
 
 		<label class="mt-3 flex items-center gap-2 text-xs text-ink">
 			<input type="checkbox" bind:checked={bgEnabled} onchange={updatePreview} />
-			Rendi lo sfondo trasparente
+			{t('editor.bgTransparent')}
 		</label>
 
 		{#if bgEnabled}
 			<div class="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-				Metodo
+				{t('editor.method')}
 				<select
 					value={bgMethod}
 					onchange={(e) => {
@@ -355,8 +360,8 @@
 					}}
 					class="rounded border border-brand-light bg-white px-1 py-0.5 text-ink"
 				>
-					<option value="color">Colore (pipetta)</option>
-					<option value="luminance">Luminosità</option>
+					<option value="color">{t('editor.methodColor')}</option>
+					<option value="luminance">{t('editor.methodLuminance')}</option>
 				</select>
 			</div>
 
@@ -369,14 +374,14 @@
 							? 'rounded bg-brand px-2 py-0.5 font-medium text-white'
 							: 'rounded border border-brand-light px-2 py-0.5 text-ink hover:bg-brand-light/20'}
 						onclick={() => (tool = 'eyedrop')}
-						title="Clicca sullo sfondo da rendere trasparente">💧 Pipetta</button
+						title={t('editor.eyedropTitle')}>{t('editor.eyedrop')}</button
 					>
 					<span
 						class="inline-block h-4 w-6 rounded border border-brand-light"
 						style:background-color={hex(bgColor)}
-						title="Colore di sfondo"
+						title={t('editor.bgColorTitle')}
 					></span>
-					<span>Tolleranza</span>
+					<span>{t('editor.tolerance')}</span>
 					<input
 						type="range"
 						min="0.02"
@@ -392,7 +397,7 @@
 				</div>
 			{:else}
 				<label class="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-					Sensibilità
+					{t('editor.sensitivity')}
 					<input
 						type="range"
 						min="0.5"
@@ -411,7 +416,7 @@
 		{/if}
 
 		<label class="mt-2 flex items-center gap-2 text-xs text-ink-muted">
-			Intensità tratto
+			{t('editor.strength')}
 			<input
 				type="range"
 				min="0"
@@ -430,7 +435,7 @@
 		{#if allowLineRemoval}
 			<label class="mt-2 flex items-center gap-2 text-xs text-ink">
 				<input type="checkbox" bind:checked={removeLines} onchange={updatePreview} />
-				Rimuovi la riga del modulo sotto la firma
+				{t('editor.removeLine')}
 			</label>
 		{/if}
 	</div>
@@ -444,16 +449,16 @@
 	<input
 		type="text"
 		bind:value={label}
-		placeholder="Etichetta (facoltativa)"
+		placeholder={t('sigmodal.labelOptional')}
 		class="w-56 rounded border border-brand-light px-2 py-1 text-sm text-ink outline-none focus:border-brand"
 	/>
 	<button type="button" class="ml-auto rounded px-3 py-1.5 text-sm text-ink-muted hover:text-ink" onclick={oncancel}>
-		← Indietro
+		{t('editor.back')}
 	</button>
 	<button
 		type="button"
 		disabled={!previewUrl}
 		class="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
-		onclick={save}>Salva in libreria</button
+		onclick={save}>{t('editor.saveToLibrary')}</button
 	>
 </div>

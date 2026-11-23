@@ -9,6 +9,7 @@
 	import { formFields } from '$lib/pdf/formfields.svelte';
 	import { detectFormFields } from '$lib/pdf/forms';
 	import { FONTS } from '$lib/pdf/fonts';
+	import { locale, t } from '$lib/i18n/locale.svelte';
 	import PdfPage from '$lib/pdf/PdfPage.svelte';
 	import SignatureModal from '$lib/pdf/SignatureModal.svelte';
 
@@ -17,7 +18,8 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state('');
-	let status = $state('');
+	// Reactive save confirmation (so it re-translates on a language switch).
+	let saved = $state(false);
 	let sigModalOpen = $state(false);
 	const scale = 1.5;
 
@@ -37,7 +39,7 @@
 	 */
 	async function loadPath(path: string, name?: string) {
 		error = '';
-		status = '';
+		saved = false;
 		try {
 			loading = true;
 			const doc = await loadPdfDocument(path);
@@ -127,7 +129,7 @@
 	async function savePdf() {
 		if (!loaded) return;
 		error = '';
-		status = '';
+		saved = false;
 		try {
 			saving = true;
 			const outBytes = await bakeAnnotations(
@@ -137,8 +139,7 @@
 				formFields.hasForm && formFields.flatten
 			);
 			const suggested = fileName.replace(/\.pdf$/i, '') + '-compilato.pdf';
-			const ok = await savePdfBytes(outBytes, suggested);
-			status = ok ? 'PDF salvato.' : '';
+			saved = await savePdfBytes(outBytes, suggested);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -159,11 +160,57 @@
 >
 	<span class="select-none text-lg font-bold tracking-tight">PdfModdy</span>
 
+	<!-- Language switch: inline-SVG flags (crisp at any size, unlike emoji). -->
+	<div class="flex items-center gap-1" role="group" aria-label="Lingua / Language">
+		<button
+			type="button"
+			onclick={() => locale.set('it')}
+			aria-pressed={locale.current === 'it'}
+			title={t('lang.switchToIt')}
+			aria-label={t('lang.it')}
+			class="overflow-hidden rounded-sm border transition-all {locale.current === 'it'
+				? 'border-white ring-2 ring-white'
+				: 'border-white/40 opacity-60 hover:opacity-100'}"
+		>
+			<svg viewBox="0 0 3 2" width="26" height="17" class="block">
+				<rect width="1" height="2" x="0" fill="#009246" />
+				<rect width="1" height="2" x="1" fill="#ffffff" />
+				<rect width="1" height="2" x="2" fill="#ce2b37" />
+			</svg>
+		</button>
+		<button
+			type="button"
+			onclick={() => locale.set('en')}
+			aria-pressed={locale.current === 'en'}
+			title={t('lang.switchToEn')}
+			aria-label={t('lang.en')}
+			class="overflow-hidden rounded-sm border transition-all {locale.current === 'en'
+				? 'border-white ring-2 ring-white'
+				: 'border-white/40 opacity-60 hover:opacity-100'}"
+		>
+			<svg viewBox="0 0 60 30" width="34" height="17" class="block">
+				<clipPath id="uk-flag-clip"><rect width="60" height="30" /></clipPath>
+				<g clip-path="url(#uk-flag-clip)">
+					<rect width="60" height="30" fill="#012169" />
+					<path d="M0,0 L60,30 M60,0 L0,30" stroke="#ffffff" stroke-width="6" />
+					<path
+						d="M0,0 L60,30 M60,0 L0,30"
+						clip-path="url(#uk-flag-clip)"
+						stroke="#c8102e"
+						stroke-width="4"
+					/>
+					<path d="M30,0 V30 M0,15 H60" stroke="#ffffff" stroke-width="10" />
+					<path d="M30,0 V30 M0,15 H60" stroke="#c8102e" stroke-width="6" />
+				</g>
+			</svg>
+		</button>
+	</div>
+
 	<button
 		onclick={openPdf}
 		class="rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25 active:bg-white/30"
 	>
-		Apri PDF
+		{t('open.button')}
 	</button>
 
 	{#if loaded}
@@ -173,41 +220,41 @@
 				? 'rounded bg-white px-3 py-1.5 text-sm font-medium text-brand transition-colors'
 				: 'rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
 		>
-			{annotations.tool === 'text' ? '✓ Fine testo' : '+ Aggiungi testo'}
+			{annotations.tool === 'text' ? t('text.done') : t('text.add')}
 		</button>
 
-		<div class="flex items-center gap-1" role="group" aria-label="Simboli">
+		<div class="flex items-center gap-1" role="group" aria-label={t('symbol.groupAria')}>
 			<button
 				onclick={() => pickSymbol('check')}
 				aria-pressed={symbolActive('check')}
-				title="Posa spunte (V) — clicca sulle caselle"
+				title={t('symbol.checkTitle')}
 				class={symbolActive('check')
 					? 'rounded bg-white px-2.5 py-1.5 text-sm font-semibold text-brand'
 					: 'rounded bg-white/15 px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
 			>
-				{symbolActive('check') ? '✓ Fine' : '✓ Spunta'}
+				{symbolActive('check') ? t('symbol.checkDone') : t('symbol.check')}
 			</button>
 			<button
 				onclick={() => pickSymbol('cross')}
 				aria-pressed={symbolActive('cross')}
-				title="Posa croci (X) — clicca sulle caselle"
+				title={t('symbol.crossTitle')}
 				class={symbolActive('cross')
 					? 'rounded bg-white px-2.5 py-1.5 text-sm font-semibold text-brand'
 					: 'rounded bg-white/15 px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
 			>
-				{symbolActive('cross') ? '✕ Fine' : '✕ Croce'}
+				{symbolActive('cross') ? t('symbol.crossDone') : t('symbol.cross')}
 			</button>
 		</div>
 
 		<button
 			onclick={toggleSignature}
 			aria-pressed={annotations.tool === 'signature'}
-			title="Firma — scegli una firma dalla libreria e clicca sul PDF"
+			title={t('signature.toolTitle')}
 			class={annotations.tool === 'signature'
 				? 'rounded bg-white px-3 py-1.5 text-sm font-semibold text-brand transition-colors'
 				: 'rounded bg-white/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/25'}
 		>
-			{annotations.tool === 'signature' ? '✓ Fine firma' : '✒ Firma'}
+			{annotations.tool === 'signature' ? t('signature.toolDone') : t('signature.tool')}
 		</button>
 
 		<button
@@ -215,18 +262,21 @@
 			disabled={saving}
 			class="rounded bg-white px-3 py-1.5 text-sm font-semibold text-brand transition-colors hover:bg-white/90 disabled:opacity-60"
 		>
-			{saving ? 'Salvo…' : 'Salva PDF'}
+			{saving ? t('save.saving') : t('save.button')}
 		</button>
 
 		{#if formFields.hasForm}
 			<div
 				class="flex items-center gap-2 rounded bg-white/15 px-2 py-1 text-xs font-medium"
-				title="Questo PDF ha campi modulo compilabili direttamente"
+				title={t('form.detectedTitle')}
 			>
-				<span>📝 Modulo rilevato: {formFields.fieldCount} {formFields.fieldCount === 1 ? 'campo' : 'campi'}</span>
-				<label class="flex items-center gap-1" title="I valori diventano contenuto fisso non più modificabile">
+				<span>{t('form.detected', {
+						n: formFields.fieldCount,
+						unit: formFields.fieldCount === 1 ? t('form.unitOne') : t('form.unitMany')
+					})}</span>
+				<label class="flex items-center gap-1" title={t('form.flattenTitle')}>
 					<input type="checkbox" bind:checked={formFields.flatten} class="accent-brand" />
-					Appiattisci al salvataggio
+					{t('form.flatten')}
 				</label>
 			</div>
 		{/if}
@@ -235,7 +285,7 @@
 			{@const style = annotations.activeTextStyle}
 			<div class="ml-1 flex items-center gap-2 rounded bg-white/10 px-2 py-1 text-xs">
 				<label class="flex items-center gap-1">
-					Font
+					{t('style.font')}
 					<select
 						value={style.font}
 						onchange={(e) => annotations.setTextStyle({ font: e.currentTarget.value as typeof style.font })}
@@ -247,7 +297,7 @@
 					</select>
 				</label>
 				<label class="flex items-center gap-1">
-					Corpo
+					{t('style.size')}
 					<input
 						type="number"
 						min="6"
@@ -258,7 +308,7 @@
 					/>
 				</label>
 				<label class="flex items-center gap-1">
-					Colore
+					{t('style.color')}
 					<input
 						type="color"
 						value={style.color}
@@ -273,7 +323,7 @@
 			{@const sym = annotations.activeSymbolStyle}
 			<div class="ml-1 flex items-center gap-2 rounded bg-white/10 px-2 py-1 text-xs">
 				<label class="flex items-center gap-1">
-					Colore simbolo
+					{t('style.symbolColor')}
 					<input
 						type="color"
 						value={sym.color}
@@ -288,9 +338,7 @@
 			<div class="basis-full"></div>
 			<div class="flex w-full flex-wrap items-center gap-2 rounded bg-white/10 px-2 py-2 text-xs">
 				<span class="font-medium text-white/90">
-					{signatures.items.length === 0
-						? 'Nessuna firma salvata.'
-						: 'Scegli una firma, poi clicca sul PDF:'}
+					{signatures.items.length === 0 ? t('signature.none') : t('signature.choose')}
 				</span>
 				{#each signatures.items as sig (sig.id)}
 					{@const active = signatures.selectedId === sig.id}
@@ -311,8 +359,8 @@
 						</button>
 						<button
 							type="button"
-							aria-label="Elimina firma"
-							title="Elimina dalla libreria"
+							aria-label={t('signature.deleteAria')}
+							title={t('signature.deleteTitle')}
 							onclick={() => signatures.remove(sig.id)}
 							class="rounded px-1 text-ink-muted hover:bg-brand/10 hover:text-brand">✕</button
 						>
@@ -323,20 +371,27 @@
 					onclick={() => (sigModalOpen = true)}
 					class="rounded bg-white px-2.5 py-1 font-medium text-brand hover:bg-white/90"
 				>
-					+ Nuova firma
+					{t('signature.new')}
 				</button>
 			</div>
 		{/if}
 	{/if}
 
 	{#if fileName}
-		<span class="truncate text-sm text-white/80">{fileName} · {loaded?.numPages ?? 0} pagine</span>
+		{@const pages = loaded?.numPages ?? 0}
+		<span class="truncate text-sm text-white/80">
+			{t('file.info', {
+				name: fileName,
+				n: pages,
+				unit: pages === 1 ? t('file.pageOne') : t('file.pageMany')
+			})}
+		</span>
 	{/if}
 	{#if loading}
-		<span class="text-sm text-white/80">Carico…</span>
+		<span class="text-sm text-white/80">{t('app.loading')}</span>
 	{/if}
-	{#if status}
-		<span class="text-sm text-white/90">{status}</span>
+	{#if saved}
+		<span class="text-sm text-white/90">{t('save.done')}</span>
 	{/if}
 </header>
 
@@ -351,9 +406,9 @@
 		<div
 			class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center text-ink-muted"
 		>
-			<p class="text-lg font-medium text-ink">Nessun PDF aperto</p>
+			<p class="text-lg font-medium text-ink">{t('empty.title')}</p>
 			<p class="mt-1 text-sm">
-				Clicca <span class="font-semibold text-brand">Apri PDF</span> per iniziare.
+				{t('empty.hintBefore')}<span class="font-semibold text-brand">{t('open.button')}</span>{t('empty.hintAfter')}
 			</p>
 		</div>
 	{/if}

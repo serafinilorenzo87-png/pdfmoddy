@@ -15,6 +15,7 @@
 	import { signatures } from './signatures.svelte';
 	import { formFields } from './formfields.svelte';
 	import type { FormFieldWidget } from './forms';
+	import { t } from '$lib/i18n/locale.svelte';
 	import { ptToPx, pxToPt, ptLenToPx, pxLenToPt } from './coords';
 	import { fontDef } from './fonts';
 	import { SYMBOL_STROKES, SYMBOL_VIEWBOX } from './symbols';
@@ -338,16 +339,16 @@
 					style:touch-action="none"
 					role="button"
 					tabindex="-1"
-					aria-label="Sposta casella"
+					aria-label={t('box.moveAria')}
 					onpointerdown={(e) => startDrag(e, a)}
 					onpointermove={(e) => moveDrag(e, a)}
 					onpointerup={(e) => endDrag(e, a)}
 				>
-					<span class="cursor-move select-none">⠿ sposta</span>
+					<span class="cursor-move select-none">{t('box.move')}</span>
 					<button
 						type="button"
 						class="cursor-pointer rounded px-1 hover:bg-white/25"
-						aria-label="Elimina casella"
+						aria-label={t('box.deleteAria')}
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={() => annotations.remove(a.id)}>✕</button
 					>
@@ -399,7 +400,7 @@
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<img
 						src={a.src}
-						alt="Firma"
+						alt={t('box.signatureAlt')}
 						draggable="false"
 						class="h-full w-full select-none rounded-sm border"
 						class:border-brand={selected}
@@ -417,7 +418,7 @@
 					style:touch-action="none"
 					role="button"
 					tabindex="-1"
-					aria-label="Ridimensiona casella"
+					aria-label={t('box.resizeAria')}
 					onpointerdown={(e) => startResize(e, a)}
 					onpointermove={(e) => moveResize(e, a)}
 					onpointerup={(e) => endResize(e, a)}

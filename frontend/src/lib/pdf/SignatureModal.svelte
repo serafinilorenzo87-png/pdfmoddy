@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { trimToPng, renderCursiveName, type RasterizedSignature } from './signatureImage';
+	import { t } from '$lib/i18n/locale.svelte';
 	import AcquireSignature from './AcquireSignature.svelte';
 
 	let {
@@ -113,17 +114,17 @@
 			if (!canvasEl) return;
 			raster = trimToPng(canvasEl);
 			if (!raster) {
-				message = 'Disegna una firma prima di salvare.';
+				message = t('sigmodal.errDraw');
 				return;
 			}
 		} else {
 			raster = renderCursiveName(typedName);
 			if (!raster) {
-				message = 'Scrivi un nome prima di salvare.';
+				message = t('sigmodal.errName');
 				return;
 			}
 		}
-		const fallback = mode === 'name' ? typedName.trim() : 'Firma';
+		const fallback = mode === 'name' ? typedName.trim() : t('signature.defaultLabel');
 		onsave({
 			label: label.trim() || fallback,
 			pngDataUrl: raster.dataUrl,
@@ -155,10 +156,10 @@
 			<header
 				class="flex items-center justify-between rounded-t-lg border-b border-brand-light bg-brand px-4 py-2 text-white"
 			>
-				<span class="font-semibold">Nuova firma</span>
+				<span class="font-semibold">{t('sigmodal.title')}</span>
 				<button
 					type="button"
-					aria-label="Chiudi"
+					aria-label={t('common.close')}
 					class="rounded px-2 py-0.5 text-lg leading-none hover:bg-white/20"
 					onclick={close}>✕</button
 				>
@@ -173,7 +174,7 @@
 					onclick={() => {
 						mode = 'draw';
 						message = '';
-					}}>Disegna</button
+					}}>{t('sigmodal.tabDraw')}</button
 				>
 				<button
 					type="button"
@@ -183,7 +184,7 @@
 					onclick={() => {
 						mode = 'name';
 						message = '';
-					}}>Nome in corsivo</button
+					}}>{t('sigmodal.tabName')}</button
 				>
 				<button
 					type="button"
@@ -193,13 +194,13 @@
 					onclick={() => {
 						mode = 'acquire';
 						message = '';
-					}}>Acquisisci</button
+					}}>{t('sigmodal.tabAcquire')}</button
 				>
 			</div>
 
 			<div class="px-4 py-4">
 				{#if mode === 'draw'}
-					<p class="mb-2 text-sm text-ink-muted">Disegna la tua firma col mouse o il trackpad.</p>
+					<p class="mb-2 text-sm text-ink-muted">{t('sigmodal.drawHint')}</p>
 					<div class="overflow-hidden rounded border border-brand-light bg-white">
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<canvas
@@ -218,17 +219,17 @@
 					<button
 						type="button"
 						class="mt-2 rounded border border-brand-light px-2.5 py-1 text-xs text-brand hover:bg-brand-light/20"
-						onclick={clearCanvas}>Pulisci</button
+						onclick={clearCanvas}>{t('sigmodal.clear')}</button
 					>
 				{:else if mode === 'name'}
 					<label class="mb-1 block text-sm text-ink-muted" for="sig-name-input">
-						Nome da rendere in corsivo (font di sistema "Segoe Script")
+						{t('sigmodal.nameLabel')}
 					</label>
 					<input
 						id="sig-name-input"
 						type="text"
 						bind:value={typedName}
-						placeholder="Mario Rossi"
+						placeholder={t('sigmodal.namePlaceholder')}
 						class="w-full rounded border border-brand-light px-2 py-1.5 text-ink outline-none focus:border-brand"
 						style:font-family={'italic "Segoe Script", cursive'}
 					/>
@@ -236,9 +237,9 @@
 						class="mt-3 flex h-28 items-center justify-center overflow-hidden rounded border border-brand-light bg-white"
 					>
 						{#if namePreview}
-							<img src={namePreview.dataUrl} alt="Anteprima firma" class="max-h-24 max-w-full" />
+							<img src={namePreview.dataUrl} alt={t('sigmodal.previewAlt')} class="max-h-24 max-w-full" />
 						{:else}
-							<span class="text-sm text-ink-muted">Anteprima</span>
+							<span class="text-sm text-ink-muted">{t('sigmodal.preview')}</span>
 						{/if}
 					</div>
 				{:else}
@@ -248,13 +249,15 @@
 				{#if mode !== 'acquire'}
 					<div class="mt-4">
 						<label class="mb-1 block text-xs text-ink-muted" for="sig-label-input">
-							Etichetta (facoltativa)
+							{t('sigmodal.labelOptional')}
 						</label>
 						<input
 							id="sig-label-input"
 							type="text"
 							bind:value={label}
-							placeholder={mode === 'name' ? 'Es. Firma Mario' : 'Es. Firma 1'}
+							placeholder={mode === 'name'
+								? t('sigmodal.labelPlaceholderName')
+								: t('sigmodal.labelPlaceholderDraw')}
 							class="w-56 rounded border border-brand-light px-2 py-1 text-sm text-ink outline-none focus:border-brand"
 						/>
 					</div>
@@ -270,13 +273,13 @@
 					<button
 						type="button"
 						class="rounded px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-						onclick={close}>Annulla</button
+						onclick={close}>{t('common.cancel')}</button
 					>
 					<button
 						type="button"
 						class="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
 						disabled={mode === 'draw' ? !hasInk : !typedName.trim()}
-						onclick={save}>Salva firma</button
+						onclick={save}>{t('sigmodal.save')}</button
 					>
 				</footer>
 			{/if}
