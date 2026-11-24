@@ -90,7 +90,7 @@ export const en: Record<MessageKey, string> = {
 	'sigmodal.tabAcquire': 'Acquire',
 	'sigmodal.drawHint': 'Draw your signature with the mouse or trackpad.',
 	'sigmodal.clear': 'Clear',
-	'sigmodal.nameLabel': 'Name to render in cursive (system font "Segoe Script")',
+	'sigmodal.nameLabel': 'Name to render in cursive (system font)',
 	'sigmodal.namePlaceholder': 'John Smith',
 	'sigmodal.previewAlt': 'Signature preview',
 	'sigmodal.preview': 'Preview',

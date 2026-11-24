@@ -77,7 +77,9 @@ export function renderCursiveName(name: string): RasterizedSignature | null {
 	if (!text) return null;
 
 	const fontSize = 120;
-	const font = `italic ${fontSize}px "Segoe Script", "Segoe Print", cursive`;
+	// Cursive font stack with per-OS fallbacks: Segoe Script/Print on Windows,
+	// Snell Roundhand / Savoye LET / Apple Chancery on macOS, generic cursive last.
+	const font = `italic ${fontSize}px "Segoe Script", "Segoe Print", "Snell Roundhand", "Savoye LET", "Apple Chancery", cursive`;
 
 	// Measure first so the canvas is wide enough for the whole name.
 	const probe = document.createElement('canvas').getContext('2d');

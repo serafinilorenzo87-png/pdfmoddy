@@ -97,10 +97,22 @@ fn locate_soffice(configured: Option<&str>) -> Option<PathBuf> {
         }
     }
 
+    // Standard install locations, per OS.
+    #[cfg(target_os = "windows")]
     const COMMON: &[&str] = &[
         r"C:\Program Files\LibreOffice\program\soffice.exe",
         r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
     ];
+    #[cfg(target_os = "macos")]
+    const COMMON: &[&str] = &["/Applications/LibreOffice.app/Contents/MacOS/soffice"];
+    #[cfg(all(unix, not(target_os = "macos")))]
+    const COMMON: &[&str] = &[
+        "/usr/bin/soffice",
+        "/usr/local/bin/soffice",
+        "/opt/libreoffice/program/soffice",
+        "/snap/bin/libreoffice",
+    ];
+
     for c in COMMON {
         let path = Path::new(c);
         if path.is_file() {
@@ -108,10 +120,16 @@ fn locate_soffice(configured: Option<&str>) -> Option<PathBuf> {
         }
     }
 
-    // PATH scan (soffice.com first, so we get the blocking wrapper).
+    // PATH scan. On Windows prefer soffice.com (the blocking console wrapper);
+    // elsewhere the executable is just `soffice`.
+    #[cfg(target_os = "windows")]
+    const PATH_NAMES: &[&str] = &["soffice.com", "soffice.exe"];
+    #[cfg(not(target_os = "windows"))]
+    const PATH_NAMES: &[&str] = &["soffice"];
+
     if let Some(paths) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&paths) {
-            for name in ["soffice.com", "soffice.exe"] {
+            for name in PATH_NAMES {
                 let candidate = dir.join(name);
                 if candidate.is_file() {
                     return Some(candidate);

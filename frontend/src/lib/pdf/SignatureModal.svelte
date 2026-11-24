@@ -231,7 +231,7 @@
 						bind:value={typedName}
 						placeholder={t('sigmodal.namePlaceholder')}
 						class="w-full rounded border border-brand-light px-2 py-1.5 text-ink outline-none focus:border-brand"
-						style:font-family={'italic "Segoe Script", cursive'}
+						style:font-family={'italic "Segoe Script", "Snell Roundhand", "Savoye LET", "Apple Chancery", cursive'}
 					/>
 					<div
 						class="mt-3 flex h-28 items-center justify-center overflow-hidden rounded border border-brand-light bg-white"

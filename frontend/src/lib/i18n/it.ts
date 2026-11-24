@@ -94,7 +94,7 @@ export const it = {
 	'sigmodal.tabAcquire': 'Acquisisci',
 	'sigmodal.drawHint': 'Disegna la tua firma col mouse o il trackpad.',
 	'sigmodal.clear': 'Pulisci',
-	'sigmodal.nameLabel': 'Nome da rendere in corsivo (font di sistema "Segoe Script")',
+	'sigmodal.nameLabel': 'Nome da rendere in corsivo (font di sistema)',
 	'sigmodal.namePlaceholder': 'Mario Rossi',
 	'sigmodal.previewAlt': 'Anteprima firma',
 	'sigmodal.preview': 'Anteprima',

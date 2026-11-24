@@ -22,7 +22,7 @@ export default {
             },
             fontFamily: {
                 sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
-                cursive: ['"Segoe Script"', '"Brush Script MT"', 'cursive']
+                cursive: ['"Segoe Script"', '"Brush Script MT"', '"Snell Roundhand"', '"Savoye LET"', '"Apple Chancery"', 'cursive']
             }
         }
     },
