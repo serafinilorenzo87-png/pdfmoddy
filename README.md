@@ -81,7 +81,7 @@ src-tauri/       Tauri shell: Rust commands (file I/O, PDF→Word), bundle confi
 
 ## License
 
-To be defined by the author.
+Released under the [MIT License](LICENSE). © 2026 Lorenzo Serafini.
 
 ---
 
