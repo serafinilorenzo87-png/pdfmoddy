@@ -1,10 +1,26 @@
-# PdfModdy
+<p align="center">
+  <img src="docs/icon.png" alt="PdfModdy icon" width="140">
+</p>
+
+<h1 align="center">PdfModdy</h1>
 
 **PdfModdy** is a local desktop app for **Windows and macOS** to visually **sign and fill PDF documents** — fully offline, no cloud, no account.
 
 It is **not** a cryptographic/PAdES signer: it places a visual overlay (handwritten‑style signatures, check marks, typed text) on top of the PDF and bakes it into a new file. Think of it as a lightweight, offline alternative for the everyday "print → sign → scan" loop.
 
 > Created by Lorenzo Serafini.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshot-overview.png" alt="PdfModdy with a PDF open and the full toolbar" width="820">
+  <br><em>Open any PDF — sign it, tick check boxes, type text, export to Word.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-signed.png" alt="A contract filled with check marks and a signature in PdfModdy" width="820">
+  <br><em>A contract filled in and signed in a few clicks, ready to save or export.</em>
+</p>
 
 ---
 
