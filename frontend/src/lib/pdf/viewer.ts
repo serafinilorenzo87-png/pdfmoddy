@@ -11,7 +11,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
 
 type PdfjsModule = typeof import('pdfjs-dist');
 
@@ -54,6 +54,32 @@ export async function openFileDialog(
  */
 export async function openExternalUrl(url: string): Promise<void> {
     await invoke('open_external_url', { url });
+}
+
+/**
+ * Render a selectable text layer over a page's canvas. PDF.js lays transparent
+ * <span>s matching the rendered glyphs into `container`, so the PDF's real text
+ * can be highlighted and copied. The spans are positioned with the
+ * `--scale-factor` CSS variable, which the caller must set on `container` to the
+ * viewport scale. Returns the layer so the caller can `cancel()` it before a
+ * re-render (zoom change). Purely visual/interactive — it never alters the PDF.
+ */
+export async function renderTextLayer(
+    page: PDFPageProxy,
+    container: HTMLElement,
+    viewport: PageViewport
+): Promise<{ cancel(): void }> {
+    const lib = await ensurePdfjs();
+    const textLayer = new lib.TextLayer({
+        textContentSource: page.streamTextContent({
+            includeMarkedContent: true,
+            disableNormalization: true
+        }),
+        container,
+        viewport
+    });
+    await textLayer.render();
+    return textLayer;
 }
 
 /** Read any file from disk as raw bytes (via the same Rust base64 command). */

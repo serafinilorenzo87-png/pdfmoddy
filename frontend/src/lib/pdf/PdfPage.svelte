@@ -11,7 +11,7 @@
 	import { tick } from 'svelte';
 	import type { PDFPageProxy, PageViewport } from 'pdfjs-dist';
 	import type { LoadedPdf } from './viewer';
-	import { openExternalUrl } from './viewer';
+	import { openExternalUrl, renderTextLayer } from './viewer';
 	import { annotations, type Annotation } from './annotations.svelte';
 	import { signatures } from './signatures.svelte';
 	import { formFields } from './formfields.svelte';
@@ -29,6 +29,7 @@
 
 	let canvasEl: HTMLCanvasElement;
 	let overlayEl: HTMLDivElement;
+	let textLayerEl: HTMLDivElement;
 	let viewport = $state<PageViewport | null>(null);
 
 	// Web links found in the PDF (href-style Link annotations with a URL). These
@@ -43,6 +44,7 @@
 		const pageNum = pageIndex + 1;
 		const s = scale;
 		let cancelled = false;
+		let textLayer: { cancel(): void } | null = null;
 		(async () => {
 			const page: PDFPageProxy = await loaded.pdf.getPage(pageNum);
 			const vp = page.getViewport({ scale: s });
@@ -61,6 +63,22 @@
 				transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined
 			}).promise;
 
+			// Selectable text: lay PDF.js's transparent text spans over the canvas
+			// so the page's real text can be highlighted and copied. Re-rendered on
+			// zoom (the spans scale via the --scale-factor set here); the old layer
+			// is cleared first so spans never pile up.
+			if (!cancelled && textLayerEl) {
+				textLayerEl.textContent = '';
+				textLayerEl.style.setProperty('--scale-factor', String(s));
+				try {
+					const layer = await renderTextLayer(page, textLayerEl, vp);
+					if (cancelled) layer.cancel();
+					else textLayer = layer;
+				} catch {
+					/* text layer is optional; ignore render failures */
+				}
+			}
+
 			// Collect href-style links (Link annotations that resolve to a URL).
 			// Scale-independent, but fetched here so it tracks the loaded page.
 			try {
@@ -75,6 +93,7 @@
 		})();
 		return () => {
 			cancelled = true;
+			textLayer?.cancel();
 		};
 	});
 
@@ -265,6 +284,14 @@
 
 <div class="relative my-4 inline-block">
 	<canvas bind:this={canvasEl} class="block rounded-sm bg-white shadow-md"></canvas>
+
+	<!-- Selectable text layer: PDF.js lays transparent spans matching the page's
+	     glyphs over the canvas, so the real text can be highlighted and copied.
+	     The container is click-through (pointer-events none, set in app.css) and
+	     only the spans opt back in — so the form fields, links and placement
+	     overlay stacked above still receive their clicks; only text is selectable.
+	     Sits directly over the canvas, under every interactive layer. -->
+	<div bind:this={textLayerEl} class="textLayer absolute inset-0"></div>
 
 	<!-- Native AcroForm fields layer: real HTML inputs positioned over the PDF's
 	     existing form widgets. The container is click-through (pointer-events
