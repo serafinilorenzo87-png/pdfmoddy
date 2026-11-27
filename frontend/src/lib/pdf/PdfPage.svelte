@@ -291,7 +291,12 @@
 	     only the spans opt back in — so the form fields, links and placement
 	     overlay stacked above still receive their clicks; only text is selectable.
 	     Sits directly over the canvas, under every interactive layer. -->
-	<div bind:this={textLayerEl} class="textLayer absolute inset-0"></div>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		bind:this={textLayerEl}
+		class="textLayer absolute inset-0"
+		onmousedown={() => textLayerEl.classList.add('selecting')}
+	></div>
 
 	<!-- Native AcroForm fields layer: real HTML inputs positioned over the PDF's
 	     existing form widgets. The container is click-through (pointer-events

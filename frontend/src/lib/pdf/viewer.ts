@@ -56,13 +56,105 @@ export async function openExternalUrl(url: string): Promise<void> {
     await invoke('open_external_url', { url });
 }
 
+// ── Text-layer selection behaviour ───────────────────────────────────────────
+// PDF.js's low-level `TextLayer` only lays out the transparent spans; the smooth
+// selection UX — so dragging never also grabs the text *before* where you
+// started — lives in its viewer's `TextLayerBuilder`. We port the essential
+// part: each text layer gets an `.endOfContent` sentinel, and one shared set of
+// document listeners repositions it to the live selection anchor. This mirrors
+// pdf.js's own implementation (web/text_layer_builder.js).
+const textLayerEnds = new Map<HTMLElement, HTMLElement>();
+let selectionAbort: AbortController | null = null;
+
+function resetTextLayerSelection(end: HTMLElement, textLayer: HTMLElement) {
+    textLayer.append(end);
+    end.style.width = '';
+    end.style.height = '';
+    textLayer.classList.remove('selecting');
+}
+
+function enableGlobalSelectionListener() {
+    if (selectionAbort) return;
+    selectionAbort = new AbortController();
+    const { signal } = selectionAbort;
+    let isPointerDown = false;
+    let prevRange: Range | null = null;
+
+    document.addEventListener('pointerdown', () => { isPointerDown = true; }, { signal });
+    const release = () => {
+        isPointerDown = false;
+        textLayerEnds.forEach(resetTextLayerSelection);
+    };
+    document.addEventListener('pointerup', release, { signal });
+    window.addEventListener('blur', release, { signal });
+    document.addEventListener('keyup', () => {
+        if (!isPointerDown) textLayerEnds.forEach(resetTextLayerSelection);
+    }, { signal });
+
+    document.addEventListener('selectionchange', () => {
+        const selection = document.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+            textLayerEnds.forEach(resetTextLayerSelection);
+            return;
+        }
+
+        // Mark which text layers the selection currently touches; reset the rest.
+        const active = new Set<HTMLElement>();
+        for (let i = 0; i < selection.rangeCount; i++) {
+            const range = selection.getRangeAt(i);
+            for (const div of textLayerEnds.keys()) {
+                if (!active.has(div) && range.intersectsNode(div)) active.add(div);
+            }
+        }
+        for (const [div, end] of textLayerEnds) {
+            if (active.has(div)) div.classList.add('selecting');
+            else resetTextLayerSelection(end, div);
+        }
+
+        // Move the sentinel next to the selection's anchor so the browser never
+        // extends the selection backwards past where the drag began.
+        const range = selection.getRangeAt(0);
+        const modifyStart =
+            prevRange !== null &&
+            (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 ||
+                range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0);
+        let anchor: Node | null = modifyStart ? range.startContainer : range.endContainer;
+        if (anchor && anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+        const anchorEl = anchor as HTMLElement | null;
+        const parentTextLayer =
+            (anchorEl?.parentElement?.closest('.textLayer') as HTMLElement | null) ?? null;
+        const end = parentTextLayer ? textLayerEnds.get(parentTextLayer) : undefined;
+        if (end && parentTextLayer && anchorEl?.parentElement) {
+            end.style.width = parentTextLayer.style.width;
+            end.style.height = parentTextLayer.style.height;
+            anchorEl.parentElement.insertBefore(end, modifyStart ? anchorEl : anchorEl.nextSibling);
+        }
+        prevRange = range.cloneRange();
+    }, { signal });
+}
+
+function registerTextLayer(div: HTMLElement, end: HTMLElement) {
+    textLayerEnds.set(div, end);
+    enableGlobalSelectionListener();
+}
+
+function unregisterTextLayer(div: HTMLElement) {
+    textLayerEnds.delete(div);
+    if (textLayerEnds.size === 0) {
+        selectionAbort?.abort();
+        selectionAbort = null;
+    }
+}
+
 /**
  * Render a selectable text layer over a page's canvas. PDF.js lays transparent
  * <span>s matching the rendered glyphs into `container`, so the PDF's real text
  * can be highlighted and copied. The spans are positioned with the
  * `--scale-factor` CSS variable, which the caller must set on `container` to the
- * viewport scale. Returns the layer so the caller can `cancel()` it before a
- * re-render (zoom change). Purely visual/interactive — it never alters the PDF.
+ * viewport scale. An `.endOfContent` sentinel plus shared document listeners
+ * give the same selection behaviour as the PDF.js viewer (no backward grab).
+ * Returns the layer so the caller can `cancel()` it before a re-render (zoom
+ * change). Purely visual/interactive — it never alters the PDF.
  */
 export async function renderTextLayer(
     page: PDFPageProxy,
@@ -79,7 +171,18 @@ export async function renderTextLayer(
         viewport
     });
     await textLayer.render();
-    return textLayer;
+
+    const end = document.createElement('div');
+    end.className = 'endOfContent';
+    container.append(end);
+    registerTextLayer(container, end);
+
+    return {
+        cancel() {
+            textLayer.cancel();
+            unregisterTextLayer(container);
+        }
+    };
 }
 
 /** Read any file from disk as raw bytes (via the same Rust base64 command). */
