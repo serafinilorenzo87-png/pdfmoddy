@@ -29,6 +29,11 @@ body {
     forced-color-adjust: none;
     transform-origin: 0 0;
     caret-color: CanvasText;
+    /* Own stacking context (without a z-index, so the layer still sits below the
+       interactive layers that follow it in the DOM). This scopes the z-index
+       below so the endOfContent sentinel can't paint over the glyph spans and
+       block selection — while form fields, links and the overlay stay on top. */
+    isolation: isolate;
 }
 
 .textLayer span,
@@ -38,6 +43,9 @@ body {
     white-space: pre;
     cursor: text;
     transform-origin: 0% 0%;
+    /* Above the endOfContent sentinel (z-index 0) so a drag-select always lands
+       on the text, never on the sentinel's user-select:none surface. */
+    z-index: 1;
 }
 
 .textLayer span.markedContent {
