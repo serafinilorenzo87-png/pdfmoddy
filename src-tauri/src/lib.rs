@@ -273,6 +273,29 @@ fn convert_pdf_to_docx(
     Ok(())
 }
 
+// ── Open a web link from a PDF ───────────────────────────────────────────────
+
+/// Whether an external URL is safe to hand to the OS opener: only web and mail
+/// links. Everything else — `file:`, `javascript:`, a bare local path, or any
+/// custom scheme that could launch a local program — is rejected, so a crafted
+/// link annotation inside an opened PDF can never run anything on the machine.
+fn is_allowed_external_url(url: &str) -> bool {
+    let u = url.trim().to_ascii_lowercase();
+    u.starts_with("http://") || u.starts_with("https://") || u.starts_with("mailto:")
+}
+
+/// Open an external link from a PDF in the user's default browser / mail client.
+/// Restricted to http/https/mailto (see `is_allowed_external_url`). Opening goes
+/// through the OS handler directly (no shell), so the URL is never interpreted
+/// by a command line.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !is_allowed_external_url(&url) {
+        return Err("blocked: only http, https and mailto links are allowed".into());
+    }
+    opener::open(url.trim()).map_err(|e| format!("open url: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Path this (first) instance was launched with, before the webview exists.
@@ -304,7 +327,8 @@ pub fn run() {
             write_file_base64,
             get_launch_file,
             check_soffice,
-            convert_pdf_to_docx
+            convert_pdf_to_docx,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running PdfModdy");
@@ -312,7 +336,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_soffice, extract_pdf_path, locate_soffice, to_file_url};
+    use super::{
+        check_soffice, extract_pdf_path, is_allowed_external_url, locate_soffice, to_file_url,
+    };
     use std::path::Path;
 
     fn args(parts: &[&str]) -> Vec<String> {
@@ -336,6 +362,23 @@ mod tests {
         if let Some(p) = got {
             assert_ne!(p.to_string_lossy(), r"Z:\nope\soffice.exe");
         }
+    }
+
+    #[test]
+    fn allows_web_and_mail_links() {
+        assert!(is_allowed_external_url("https://example.com"));
+        assert!(is_allowed_external_url("http://example.com/path?q=1&r=2"));
+        assert!(is_allowed_external_url("  HTTPS://Example.com/x  "));
+        assert!(is_allowed_external_url("mailto:info@example.com"));
+    }
+
+    #[test]
+    fn blocks_non_web_links() {
+        assert!(!is_allowed_external_url("file:///C:/Windows/System32/calc.exe"));
+        assert!(!is_allowed_external_url("javascript:alert(1)"));
+        assert!(!is_allowed_external_url("ftp://example.com/x"));
+        assert!(!is_allowed_external_url(r"C:\Windows\System32\cmd.exe"));
+        assert!(!is_allowed_external_url(""));
     }
 
     #[test]

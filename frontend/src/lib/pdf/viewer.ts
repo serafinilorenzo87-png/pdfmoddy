@@ -47,6 +47,15 @@ export async function openFileDialog(
     return { path, name };
 }
 
+/**
+ * Open a link found inside a PDF (http/https/mailto) in the user's default
+ * browser or mail client. The Rust side re-validates the scheme, so a crafted
+ * link can never launch a local program; anything else is silently ignored.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+    await invoke('open_external_url', { url });
+}
+
 /** Read any file from disk as raw bytes (via the same Rust base64 command). */
 export async function readFileBytes(path: string): Promise<Uint8Array> {
     const b64 = await invoke<string>('read_file_base64', { path });

@@ -27,6 +27,10 @@ serde_json = "1"
 # Binary file bytes cross the Tauri IPC bridge as base64 strings.
 base64 = "0.22"
 
+# Open http(s)/mailto links from a PDF in the user's default handler, without a
+# shell (ShellExecute on Windows, `open` on macOS, `xdg-open` on Linux).
+opener = "0.7"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

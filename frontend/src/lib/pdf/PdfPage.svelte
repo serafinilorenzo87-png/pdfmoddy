@@ -11,6 +11,7 @@
 	import { tick } from 'svelte';
 	import type { PDFPageProxy, PageViewport } from 'pdfjs-dist';
 	import type { LoadedPdf } from './viewer';
+	import { openExternalUrl } from './viewer';
 	import { annotations, type Annotation } from './annotations.svelte';
 	import { signatures } from './signatures.svelte';
 	import { formFields } from './formfields.svelte';
@@ -29,6 +30,12 @@
 	let canvasEl: HTMLCanvasElement;
 	let overlayEl: HTMLDivElement;
 	let viewport = $state<PageViewport | null>(null);
+
+	// Web links found in the PDF (href-style Link annotations with a URL). These
+	// are only pixels on the canvas, so we lay invisible clickable boxes over
+	// them; clicking opens the URL in the default browser. Internal/go-to links
+	// (no URL) are ignored.
+	let pageLinks = $state<{ url: string; rect: number[] }[]>([]);
 
 	// Render (and re-render on zoom change) the page into the canvas, sized for
 	// the device pixel ratio so text stays crisp.
@@ -53,11 +60,39 @@
 				viewport: vp,
 				transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined
 			}).promise;
+
+			// Collect href-style links (Link annotations that resolve to a URL).
+			// Scale-independent, but fetched here so it tracks the loaded page.
+			try {
+				const anns = await page.getAnnotations({ intent: 'display' });
+				if (cancelled) return;
+				pageLinks = anns
+					.filter((a) => a.subtype === 'Link' && (a.url || a.unsafeUrl))
+					.map((a) => ({ url: (a.url || a.unsafeUrl) as string, rect: a.rect as number[] }));
+			} catch {
+				pageLinks = [];
+			}
 		})();
 		return () => {
 			cancelled = true;
 		};
 	});
+
+	/** Screen box for a PDF link rect [x1,y1,x2,y2] (PDF points, y-up). */
+	function linkStyle(rect: number[]): string {
+		if (!viewport) return 'display:none';
+		const x = Math.min(rect[0], rect[2]);
+		const yTop = Math.max(rect[1], rect[3]);
+		const { xPx, yPx } = ptToPx(viewport, x, yTop);
+		const wpx = ptLenToPx(viewport, Math.abs(rect[2] - rect[0]));
+		const hpx = ptLenToPx(viewport, Math.abs(rect[3] - rect[1]));
+		return `left:${xPx}px; top:${yPx}px; width:${wpx}px; height:${hpx}px;`;
+	}
+
+	/** Open a PDF web link in the default browser (scheme re-checked in Rust). */
+	function onLinkClick(url: string) {
+		openExternalUrl(url).catch(() => {});
+	}
 
 	const pageAnnots = $derived(annotations.forPage(pageIndex));
 	const placing = $derived(annotations.tool !== 'none');
@@ -309,6 +344,27 @@
 						</select>
 					{/if}
 				</div>
+			{/each}
+		</div>
+	{/if}
+
+	<!-- Web links layer: invisible clickable boxes over the PDF's href links.
+	     Click-through container (only the buttons are interactive), sitting UNDER
+	     the overlay in the DOM — so a placement tool still captures clicks when
+	     armed, and links are live only when no tool is active. Buttons (not <a>)
+	     so a click never navigates the whole webview away from the app. -->
+	{#if viewport && pageLinks.length > 0 && !placing}
+		<div class="absolute inset-0" style:pointer-events="none">
+			{#each pageLinks as lk, i (i)}
+				<button
+					type="button"
+					class="absolute cursor-pointer rounded-sm transition-colors hover:bg-brand/10"
+					style={linkStyle(lk.rect)}
+					style:pointer-events="auto"
+					title={lk.url}
+					aria-label={lk.url}
+					onclick={() => onLinkClick(lk.url)}
+				></button>
 			{/each}
 		</div>
 	{/if}
